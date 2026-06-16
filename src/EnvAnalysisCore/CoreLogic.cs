@@ -1,50 +1,53 @@
 using System;
-using Rhino;
 using Rhino.Geometry;
-using Rhino.DocObjects;
 using System.Collections.Generic;
 
 namespace EnvAnalysisCore
 {
     /// <summary>
-    /// Phase 1: Ingestion
-    /// Responsible for parsing the Rhino Document based on Layer Conventions.
+    /// Pure Logic Core: Simplification Algorithms
+    /// Stateless methods for planarizing geometry for Ladybug/Honeybee.
     /// </summary>
-    public class Ingestor
+    public static class SimplificationLogic
     {
-        public List<AnalysisObject> ExtractFromLayers(RhinoDoc doc)
+        public static Brep Planarize(Brep input) 
         {
-            var objects = new List<AnalysisObject>();
-            // Logic to traverse Analysis:: layers and wrap RhinoObjects
-            return objects;
+            // Deterministic simplification logic using Rhino.Geometry only
+            return input; 
         }
     }
 
     /// <summary>
-    /// Phase 2: Core Geometry Engine
-    /// Deterministic transformations for analysis.
+    /// Pure Logic Core: CFD Meshing Algorithms
+    /// Stateless methods for generating watertight meshes for wind analysis.
     /// </summary>
-    public class GeometryEngine
+    public static class MeshingLogic
     {
-        public Brep Planarize(Brep input) 
+        public static Mesh GenerateWatertightMesh(IEnumerable<Brep> inputs)
         {
-            // Deterministic simplification logic
-            return input; 
-        }
-
-        public Mesh GenerateWatertightMesh(List<Brep> inputs)
-        {
-            // Boolean union and watertight meshing for CFD
+            // Boolean union and watertight meshing logic using Rhino.Geometry only
             return new Mesh();
         }
     }
 
     /// <summary>
-    /// Internal representation of an object tagged for analysis.
+    /// Pure Logic Core: Adjacency Algorithms
+    /// Stateless methods for intersecting zones and matching thermal boundaries.
     /// </summary>
-    public class AnalysisObject
+    public static class AdjacencyLogic
     {
-        public Guid Id { get; set; }
+        public static void SolveAdjacency(IEnumerable<Brep> zones)
+        {
+            // Logic to intersect adjacent Breps and match faces
+        }
+    }
+
+    /// <summary>
+    /// Stateless data structure for internal geometry representation.
+    /// Does not depend on RhinoDoc or RhinoObject.
+    /// </summary>
+    public class AnalysisGeometry
+    {
         public GeometryBase Geometry { get; set; }
         public string Type { get; set; } // Wall, Roof, Aperture, Context
         public string ZoneName { get; set; }

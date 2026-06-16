@@ -5,32 +5,28 @@ The objective is to build a deterministic C# Rhino Plugin that bridges the gap b
 
 Furthermore, this tool is designed to be **MCP-Agent friendly**. It will serve as the underlying engine allowing a RhinoMCP assistant to autonomously prep and transform geometry based on user prompts.
 
-## 2. Core Architecture: Pipeline & Adapter Pattern
+## 2. Core Architecture: Pure Logic & Adapter Pattern
 
-The plugin will be structured into three main phases, allowing data to flow from raw design layers to analysis-ready outputs.
+The plugin is structured to separate stateless geometric algorithms from the Rhino Document state. This ensures the system is deterministic, testable, and robust when orchestrated by an MCP Agent.
 
-### Phase 1: Ingestion (Layer Convention Parser)
-Raw design geometry will be identified using a strict layer-based convention.
-*   **Convention Schema:** Define a standardized layer structure (e.g., `Analysis::Context`, `Analysis::Zones::[ZoneName]::Walls`, `Analysis::Shading`).
-*   **Ingestion Logic:** C# methods to recursively scan the layer table, extract objects, and wrap them in an internal data structure (e.g., `AnalysisObject`) that tags their intended role (Aperture, Wall, Context, Roof).
+### Layer 1: Pure Logic Core (Stateless Algorithms)
+This is the heart of the plugin. It contains the deterministic algorithms to transform geometry.
+*   **Dependency**: Only `Rhino.Geometry`.
+*   **Constraint**: No knowledge of `RhinoDoc`, `RhinoObject`, or layers.
+*   **Components**:
+    *   **Simplifier (For Ladybug/Honeybee)**: Logic to planarize complex/curved Breps.
+    *   **Volume Solver (For Honeybee)**: Intersection & adjacency algorithms to create matched boundary faces.
+    *   **Mesher (For CFD)**: Logic to boolean union and mesh context for wind analysis.
 
-### Phase 2: Core Geometry Engine (Deterministic Transformations)
-This is the heart of the plugin, containing deterministic algorithms to alter the geometry.
-*   **Simplifier (For Ladybug/Honeybee Energy):** 
-    *   Converts complex/curved Breps into simplified planar surfaces.
-    *   Reduces polygon count on contextual meshes while preserving bounding volume.
-*   **Volume Solver (For Honeybee):**
-    *   Ensures that sets of planar surfaces form closed, watertight Breps (Honeybee Rooms).
-    *   **Intersection & Adjacency:** Algorithm to intersect adjacent zones to create perfectly matched internal boundary faces (crucial for accurate energy transfer).
-*   **Mesher (For CFD - Vento / Eddy3D):**
-    *   Generates uniform, watertight meshes from Breps.
-    *   Handles boolean unions of context buildings to create a single continuous ground/context mesh for wind analysis.
+### Layer 2: Document Interface Layer (Stateful Bridge)
+This layer acts as the bridge between the Rhino environment and the Pure Logic Core.
+*   **Responsibility**: Parsing layers (Ingestion), extracting geometry, and baking results back to the document.
+*   **Convention Schema**: Standardized layer structure (e.g., `Analysis::Context`, `Analysis::Zones::[ZoneName]::Walls`).
 
-### Phase 3: Target Adapters (Output Generation)
-Formats the processed geometry for the specific engine.
-*   **Direct Geometry Adapter (Ladybug / Eddy3D):** Outputs cleaned native Rhino Breps/Meshes directly to the Rhino document or Grasshopper.
-*   **Honeybee Adapter (Radiance / Energy):** Packages the simplified planar Breps into structured data that aligns with `hb_room` requirements (potentially outputting HBJSON or direct SDK objects).
-*   **Export Adapter (Vento):** Handles the robust export of watertight meshes to `.stl` format with appropriate unit scaling and coordinate origins.
+### Layer 3: Command & Agent Adapters (Orchestration)
+The entry point for users and the MCP Agent.
+*   **Rhino Commands**: Exposes the pipeline via command-line execution (e.g., `-EnvPrepPlanarize`).
+*   **Workflow Integration**: The MCP Agent reads instruction files and calls these commands in sequence.
 
 ## 3. MCP Assistant Modeller Integration
 
