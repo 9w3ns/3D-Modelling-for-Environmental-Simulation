@@ -7,7 +7,12 @@ This repository contains a deterministic geometry transformation tool for enviro
 - `CORE_ARCHITECTURE.md`: Detailed architectural plan for the C# transformation pipeline.
 - `MCP_INSTRUCTIONS.md`: Foundational instructions for AI agents (like RhinoMCP) to operate this tool.
 - `src/EnvAnalysisCore/`: C# project containing the core transformation logic.
-- `Context_Mesh_Simplification_Process.md`: Documentation on context mesh simplification.
+
+### Modeling Guides
+- `MODELLING_GUIDE_LADYBUG.md`: Requirements for Sun & Radiation analysis.
+- `MODELLING_GUIDE_HB_RADIANCE.md`: Requirements for Daylight & Glare analysis.
+- `MODELLING_GUIDE_HB_ENERGY.md`: Requirements for Thermal & Comfort analysis.
+- `MODELLING_GUIDE_CFD.md`: Requirements for Wind & CFD simulation (formerly Context Mesh Simplification).
 
 ## Quick Start for AI Agents
 
