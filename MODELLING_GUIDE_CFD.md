@@ -42,8 +42,19 @@ To physically bridge the 10m gaps between the true mesh outlines, a "Morphologic
 3.  **Boolean Union:** Union all the expanded, intersecting curves. This creates a single, continuous boundary encompassing the cluster.
 4.  **Offset Inwards (Erosion):** Offset the new, unified boundary inwards by 5m. This returns the outer perimeter to the original building edges while keeping the internal gaps bridged.
 
-## 4. Final Result
+### D. Morphological Nuances (Corner Styles)
+The "Morphological Closing" process can be executed with different corner treatments, each with specific trade-offs for CFD:
 
-The Morphological Closing script successfully processed the 48 individual building meshes in "Context 3" and merged them into **exactly 2 unified footprint curves** in the "Simplified 4" layer. 
+*   **Rounded Corners (`rg.CurveOffsetCornerStyle.Round`):**
+    *   **Logic**: Uses a "rolling ball" algorithm to offset.
+    *   **Pros**: Extremely stable Boolean Union; prevents "spikes" and self-intersections; creates smooth airflow meshes.
+    *   **Cons**: Rounds off architectural massing; may slightly alter footprint area.
+*   **Sharp Corners (`rg.CurveOffsetCornerStyle.Sharp`):**
+    *   **Logic**: Extends offset edges to their intersection point (Miter).
+    *   **Pros**: Preserves the rectilinear "boxy" character of the urban fabric.
+    *   **Cons**: Prone to massive spikes at narrow angles; high risk of Boolean Union failure; requires strict orientation checks.
 
-These curves perfectly match the scale and orientation of the user's manual simplification, providing a clean, flat (World XY), vertex-accurate boundary ready to be extruded into simple, CFD-friendly blocks.
+### E. Technical Guardrails for Automation
+To ensure the automated simplification is deterministic, the following steps were codified:
+1.  **Incremental Boolean Union**: Instead of unioning all 100+ dilated curves at once, the system unions them one-by-one. This prevents the solver from becoming overwhelmed by complex overlaps.
+2.  **Force CCW Orientation**: Before extrusion, every perimeter curve must be validated for Counter-Clockwise (CCW) orientation. If Clockwise (CW), the curve is reversed to ensure the resulting mass extrudes **Upwards** (Positive Z) rather than into the ground.

@@ -36,5 +36,12 @@ To safely bring Rhino geometry into the pipeline:
 - **Logic**: A separate Document Interface Layer (to be built) will crawl the `Analysis::` layers and map them to `AnalysisGeometry` objects for processing.
 - **Error Handling**: Missing or malformed layers should be reported via an `Analysis::Verification` sub-layer in the Rhino document.
 
+### 3. CFD Mesh Generation (Morphological Closing)
+To create a simplified, watertight urban simulation environment:
+- **Logic**: Use a Dilation-Union-Erosion sequence to bridge aerodynamic gaps between buildings.
+- **Corner Styles**: Rounded corners (`RG.Round`) are preferred for stability and smooth meshing; Sharp corners (`RG.Sharp`) preserve boxy character but require robust error handling.
+- **Incremental Union**: Implement one-by-one Boolean Union to bypass math failures in high-density overlapping spikes.
+- **Orientation Control**: Force perimeter curves to Counter-Clockwise (CCW) orientation before extrusion to ensure upward growth.
+
 ---
 *Rationale and historical decisions live in `CORE_ARCHITECTURE.md`.*
