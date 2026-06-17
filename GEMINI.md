@@ -7,7 +7,13 @@ Use the shared repository documentation as the source of truth:
 3. `MCP_INSTRUCTIONS.md` - Role definition and mandatory layer conventions.
 4. `MODELLING_GUIDE_*.md` - Engine-specific geometric requirements (Ladybug, Honeybee, CFD).
 
-At the start of every session, read `MCP_INSTRUCTIONS.md`.
+## Project Scope Mandate
+**Exclusion of Simulation Logic:** The scope of this project is strictly limited to the **3D modelling transformation and preparation** of simulation-ready geometry. Do NOT attempt to build or modify Grasshopper simulation logic (radiation, sun hours, thermal loads), as these are handled by existing standardized scripts. Focus exclusively on geometric optimization, layer compliance, and manifold verification.
+
+**The Goal Matrix (Source of Truth):** 
+The file `3D Modelling for Environmental Simulation.xlsx` is the **definitive Goal Matrix** for this project. Every transformation pathway (Ladybug, Honeybee, CFD, etc.) must be engineered to produce the specific **Geometry Type** and **Level of Detail (LOD)** defined in this matrix for the chosen simulation engine. "All roads lead to the Matrix" – the success of a transformation is measured by its compliance with these specifications.
+
+At the start of every session, read `MCP_INSTRUCTIONS.md` and consult the `3D Modelling for Environmental Simulation.xlsx` matrix.
 Also read `src/EnvAnalysisCore/CoreLogic.cs` to understand the current implementation of the stateless Pure Logic Core.
 
 ## System Integrity & Regression Guardrails

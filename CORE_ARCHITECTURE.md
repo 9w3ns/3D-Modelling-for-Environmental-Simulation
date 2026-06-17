@@ -3,6 +3,11 @@
 ## 1. Objective & Scope
 The objective is to build a deterministic C# Rhino Plugin that bridges the gap between design-oriented 3D modeling and the specific geometric requirements of environmental simulation engines (Ladybug, Honeybee, Eddy3D, Vento). 
 
+**The Goal Matrix:** 
+The primary driver for all transformation logic is the `3D Modelling for Environmental Simulation.xlsx` file. This matrix defines the target geometry type and level of detail (LOD) for every simulation pathway. The pipeline must be capable of automatically selecting the correct transformation logic (e.g., Planarize for Radiance, Watertight Mesh for CFD) based on the user's chosen target engine from this matrix.
+
+**Out of Scope:** This project does **not** include the setup or modification of Grasshopper simulation logic. Standardized simulation scripts are already provided. The focus is exclusively on the 3D model transformation, cleaning, and optimization phase.
+
 Furthermore, this tool is designed to be **MCP-Agent friendly**. It will serve as the underlying engine allowing a RhinoMCP assistant to autonomously prep and transform geometry based on user prompts.
 
 ### C. Coverage Audit & Traceability

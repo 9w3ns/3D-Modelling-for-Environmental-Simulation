@@ -15,6 +15,22 @@ namespace EnvAnalysisCore
             // Deterministic simplification logic using Rhino.Geometry only
             return input; 
         }
+
+        /// <summary>
+        /// Track 2: Aggressive Abstraction.
+        /// Returns a single 6-sided Brep box encapsulating all input geometry.
+        /// </summary>
+        public static Brep CreateBoundingVolume(IEnumerable<GeometryBase> inputs)
+        {
+            BoundingBox bbox = BoundingBox.Empty;
+            foreach (var input in inputs)
+            {
+                bbox.Union(input.GetBoundingBox(true));
+            }
+
+            if (!bbox.IsValid) return null;
+            return bbox.ToBrep();
+        }
     }
 
     /// <summary>
