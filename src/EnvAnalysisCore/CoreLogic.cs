@@ -5,15 +5,75 @@ using System.Collections.Generic;
 namespace EnvAnalysisCore
 {
     /// <summary>
+    /// Supported simulation engines. Each has unique geometric requirements 
+    /// as defined in the '3D Modelling for Environmental Simulation.xlsx' Goal Matrix.
+    /// </summary>
+    public enum SimulationTarget
+    {
+        Ladybug,
+        HoneybeeRadiance,
+        HoneybeeEnergy,
+        Eddy3D,
+        Vento
+    }
+
+    /// <summary>
     /// Pure Logic Core: Simplification Algorithms
     /// Stateless methods for planarizing geometry for Ladybug/Honeybee.
     /// </summary>
     public static class SimplificationLogic
     {
-        public static Brep Planarize(Brep input) 
+        /// <summary>
+        /// Orchestrates simplification based on the target simulation engine.
+        /// </summary>
+        public static GeometryBase Process(GeometryBase input, SimulationTarget target)
         {
-            // Deterministic simplification logic using Rhino.Geometry only
-            return input; 
+            switch (target)
+            {
+                case SimulationTarget.Ladybug:
+                    return PlanarizeForLadybug(input);
+                case SimulationTarget.HoneybeeRadiance:
+                    return PlanarizeForRadiance(input);
+                case SimulationTarget.HoneybeeEnergy:
+                    return PrepareForEnergy(input);
+                default:
+                    return input;
+            }
+        }
+
+        private static Brep PlanarizeForLadybug(GeometryBase input)
+        {
+            // Ladybug Goal: Mesh / Brep | Low (Simplified, planar)
+            // Strategy: Force each face to its average plane, preserve gaps.
+            if (input is Brep brep) return PlanarizeBrep(brep);
+            if (input is Mesh mesh) return PlanarizeMesh(mesh).ToBrep();
+            return null;
+        }
+
+        private static Brep PlanarizeForRadiance(GeometryBase input)
+        {
+            // Radiance Goal: Planar Brep | Low (Simplified, flat)
+            // Strategy: Stricter planarization, error if not flat.
+            return PlanarizeForLadybug(input);
+        }
+
+        private static Brep PrepareForEnergy(GeometryBase input)
+        {
+            // Energy Goal: Closed Brep (Watertight) | Low (Simplified)
+            // Strategy: Planarize + ensure volume is closed.
+            return PlanarizeForLadybug(input);
+        }
+
+        private static Brep PlanarizeBrep(Brep brep)
+        {
+            // Placeholder for Brep face planarization logic
+            return brep;
+        }
+
+        private static Mesh PlanarizeMesh(Mesh mesh)
+        {
+            // Placeholder for Mesh face planarization logic
+            return mesh;
         }
 
         /// <summary>
