@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "k7A99luAkmY=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\9w3n\\Desktop\\3D Modelling for Environmental Simulation\\3D-Modelling-for-Environmental-Simulation\\src\\EnvAnalysisCore\\EnvAnalysisCore.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\9w3n\\.nuget\\packages\\microsoft.netframework.referenceassemblies\\1.0.3\\microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
+    "C:\\Users\\9w3n\\.nuget\\packages\\microsoft.netframework.referenceassemblies.net48\\1.0.3\\microsoft.netframework.referenceassemblies.net48.1.0.3.nupkg.sha512",
+    "C:\\Users\\9w3n\\.nuget\\packages\\rhinocommon\\7.16.22067.13001\\rhinocommon.7.16.22067.13001.nupkg.sha512"
+  ],
+  "logs": []
+}

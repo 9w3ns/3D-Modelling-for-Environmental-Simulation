@@ -5,13 +5,11 @@
     <RootNamespace>EnvAnalysisCore</RootNamespace>
     <AssemblyName>EnvAnalysisCore</AssemblyName>
     <Platforms>AnyCPU</Platforms>
+    <TargetExt>.rhp</TargetExt>
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="RhinoCommon">
-      <HintPath>C:\Program Files\Rhino 7\System\RhinoCommon.dll</HintPath>
-      <Private>False</Private>
-    </Reference>
+    <PackageReference Include="RhinoCommon" Version="7.16.22067.13001" />
   </ItemGroup>
 
 </Project>

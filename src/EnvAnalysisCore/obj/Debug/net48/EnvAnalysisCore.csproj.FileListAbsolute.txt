@@ -1,0 +1,10 @@
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\obj\Debug\net48\EnvAnalysisCore.csproj.AssemblyReference.cache
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\obj\Debug\net48\EnvAnalysisCore.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\obj\Debug\net48\EnvAnalysisCore.AssemblyInfoInputs.cache
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\obj\Debug\net48\EnvAnalysisCore.AssemblyInfo.cs
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\obj\Debug\net48\EnvAnalysisCore.csproj.CoreCompileInputs.cache
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\obj\Debug\net48\EnvAnalysisCore.sourcelink.json
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\bin\Debug\net48\EnvAnalysisCore.pdb
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\obj\Debug\net48\EnvAnalysisCore.pdb
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\bin\Debug\net48\EnvAnalysisCore.rhp
+C:\Users\9w3n\Desktop\3D Modelling for Environmental Simulation\3D-Modelling-for-Environmental-Simulation\src\EnvAnalysisCore\obj\Debug\net48\EnvAnalysisCore.rhp
