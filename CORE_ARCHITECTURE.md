@@ -33,6 +33,7 @@ This layer acts as the bridge between the Rhino environment and the Pure Logic C
 ### Layer 3: Command & Agent Adapters (Orchestration)
 The entry point for users and the MCP Agent.
 *   **Rhino Commands**: Exposes the pipeline via command-line execution (e.g., `-EnvPrepPlanarize`).
+*   **Unique ID Export**: All simulation assets must be exported using the convention `GeometryforCFD_[FileName]_[ID].stl`. The short-hex ID is generated per-export to prevent accidental file replacement and ensure version traceability.
 *   **Workflow Integration**: The MCP Agent reads instruction files and calls these commands in sequence.
 
 ## 3. MCP Assistant Modeller Integration

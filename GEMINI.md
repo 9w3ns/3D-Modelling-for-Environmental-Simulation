@@ -44,6 +44,7 @@ To create a simplified, watertight urban simulation environment:
 - **Corner Styles**: Rounded corners (`RG.Round`) are preferred for stability and smooth meshing; Sharp corners (`RG.Sharp`) preserve boxy character but require robust error handling.
 - **Incremental Union**: Implement one-by-one Boolean Union to bypass math failures in high-density overlapping spikes.
 - **Orientation Control**: Force perimeter curves to Counter-Clockwise (CCW) orientation before extrusion to ensure upward growth.
+- **Unique ID Export**: All STL exports must follow the naming convention `GeometryforCFD_[FileName]_[ID].stl` to prevent accidental file duplication or replacement.
 
 ---
 *Rationale and historical decisions live in `CORE_ARCHITECTURE.md`.*
