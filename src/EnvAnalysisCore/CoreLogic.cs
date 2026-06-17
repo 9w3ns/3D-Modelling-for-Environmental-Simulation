@@ -51,5 +51,11 @@ namespace EnvAnalysisCore
         public GeometryBase Geometry { get; set; }
         public string Type { get; set; } // Wall, Roof, Aperture, Context
         public string ZoneName { get; set; }
+        
+        /// <summary>
+        /// Traceability: List of original RhinoObject IDs that formed this geometry.
+        /// Used for the "No Geometry Left Behind" Coverage Audit.
+        /// </summary>
+        public List<Guid> SourceIds { get; set; } = new List<Guid>();
     }
 }

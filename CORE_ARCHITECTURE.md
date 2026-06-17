@@ -5,18 +5,25 @@ The objective is to build a deterministic C# Rhino Plugin that bridges the gap b
 
 Furthermore, this tool is designed to be **MCP-Agent friendly**. It will serve as the underlying engine allowing a RhinoMCP assistant to autonomously prep and transform geometry based on user prompts.
 
-## 2. Core Architecture: Pure Logic & Adapter Pattern
+### C. Coverage Audit & Traceability
+To prevent accidental data loss during automated transformation, the system implements a "No Geometry Left Behind" loop check.
 
-The plugin is structured to separate stateless geometric algorithms from the Rhino Document state. This ensures the system is deterministic, testable, and robust when orchestrated by an MCP Agent.
+#### 1. Ingestion Catalog (The Receipt)
+Before any transformation begins, the **Document Interface Layer** creates a hash-set of every unique `RhinoObject.Id` from the targeted source layers (e.g., `Context 1`). This is the "Expected Catalog."
 
-### Layer 1: Pure Logic Core (Stateless Algorithms)
-This is the heart of the plugin. It contains the deterministic algorithms to transform geometry.
-*   **Dependency**: Only `Rhino.Geometry`.
-*   **Constraint**: No knowledge of `RhinoDoc`, `RhinoObject`, or layers.
-*   **Components**:
-    *   **Simplifier (For Ladybug/Honeybee)**: Logic to planarize complex/curved Breps.
-    *   **Volume Solver (For Honeybee)**: Intersection & adjacency algorithms to create matched boundary faces.
-    *   **Mesher (For CFD)**: Logic to boolean union and mesh context for wind analysis.
+#### 2. Traceability Tagging
+During the **Core Engine** phase, every newly generated piece of geometry (simplified block, tier, etc.) must be tagged with the `SourceID` of the architectural object(s) it represents.
+*   **Implementation**: Store the original GUID in the `UserText` of the baked object.
+
+#### 3. Gap Analysis (The Loop Check)
+After the final bake, the system performs a comparison:
+*   **Loop**: Iterate through the "Expected Catalog" and verify that every ID is referenced by at least one object on the `Analysis::...` output layers.
+*   **Exception Handling**: Any ID in the catalog that is *not* represented in the final output is flagged as a "Processing Gap."
+
+#### 4. Automated Error Routing
+Objects that fail the transformation loop are automatically moved to:
+*   `Analysis::Errors::Untransformed`: This allows the MCP Agent or the user to manually inspect messy topology or retry with a "Robust Fallback" (e.g., simple bounding box extrusion).
+
 
 ### Layer 2: Document Interface Layer (Stateful Bridge)
 This layer acts as the bridge between the Rhino environment and the Pure Logic Core.

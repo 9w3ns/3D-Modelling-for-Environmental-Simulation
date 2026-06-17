@@ -21,8 +21,10 @@ To prevent regressions in the geometry transformation pipeline:
 2.  **Validation**:
     *   **Statelessness**: Ensure that any logic added to `EnvAnalysisCore` does not reference `RhinoDoc` or `RhinoObject`.
     *   **Layer Convention**: Always verify that input geometry follows the `Analysis::...` schema defined in `MCP_INSTRUCTIONS.md`.
-3.  **BIM/Layer Identity**:
-    *   The `Analysis::Zones::[ZoneName]::[Element]` naming convention is a standard requirement for Honeybee volume solving.
+4.  **Coverage Audit (The Loop Check)**:
+    *   **No Geometry Left Behind**: Every source object identified in the Ingestion phase must be accounted for in the output.
+    *   **Gap Analysis**: If an object fails to transform, it must be flagged on `Analysis::Errors::Untransformed` rather than being silently ignored.
+    *   **Traceability**: Use Rhino UserText to link simplified outputs back to their original `SourceID`.
 
 ## Logic Change & Error Handling Strategies
 
