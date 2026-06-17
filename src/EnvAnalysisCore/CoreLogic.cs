@@ -23,10 +23,40 @@ namespace EnvAnalysisCore
     /// </summary>
     public static class MeshingLogic
     {
-        public static Mesh GenerateWatertightMesh(IEnumerable<Brep> inputs)
+        public static Mesh GenerateWatertightMesh(IEnumerable<GeometryBase> inputs, double offsetDistance = 0.5)
         {
-            // Boolean union and watertight meshing logic using Rhino.Geometry only
-            return new Mesh();
+            var combinedMesh = new Mesh();
+            var meshesToProcess = new List<Mesh>();
+
+            foreach (var input in inputs)
+            {
+                if (input is Mesh m) meshesToProcess.Add(m);
+                else if (input is Brep b) meshesToProcess.AddRange(Mesh.CreateFromBrep(b, MeshingParameters.Default));
+                else if (input is Extrusion e) meshesToProcess.Add(e.GetMesh(MeshType.Any));
+            }
+
+            if (meshesToProcess.Count == 0) return combinedMesh;
+
+            // Morphological Closing: Dilation -> Union -> Erosion
+            // 1. Dilation (Offset Mesh Outward)
+            var dilatedMeshes = new List<Mesh>();
+            foreach (var m in meshesToProcess)
+            {
+                var offset = m.Offset(offsetDistance, true);
+                if (offset != null) dilatedMeshes.Add(offset);
+            }
+
+            // 2. Union (Boolean Union of dilated meshes)
+            var unitedMesh = new Mesh();
+            if (dilatedMeshes.Count > 0)
+            {
+                unitedMesh = Mesh.CreateBooleanUnion(dilatedMeshes)?[0] ?? new Mesh();
+            }
+
+            // 3. Erosion (Offset Result Inward)
+            var finalMesh = unitedMesh.Offset(-offsetDistance, true) ?? unitedMesh;
+
+            return finalMesh;
         }
     }
 
