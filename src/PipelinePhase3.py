@@ -63,6 +63,14 @@ def run_phase_3():
                         polys = m.GetOutlines(proj_plane)
                         if polys:
                             for p in polys: outline_curves.append(p.ToPolylineCurve())
+                        else:
+                            # Fallback: Extract naked edges and project them
+                            naked_edges = m.GetNakedEdges()
+                            if naked_edges:
+                                for line in naked_edges:
+                                    crv = line.ToPolylineCurve()
+                                    crv.Transform(xform) # Project to C-plane
+                                    outline_curves.append(crv)
                 else:
                     br = rs.coercebrep(oid)
                     if br:
