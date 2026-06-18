@@ -24,22 +24,22 @@ namespace EnvAnalysisCore
             // 2. Destructive Overwrite: Clean the output layer
             CleanAnalysisLayers(doc, outputRoot);
 
-            // 3. Ingestion: Crawl layers and blocks
-            var buildingGeometry = docInterface.IngestSourceGeometry(buildingsLayer);
-            var contextGeometry = docInterface.IngestSourceGeometry(contextLayer);
+            // 3. Ingestion: Crawl layers and blocks (returns Dictionary of clusters)
+            var buildingClusters = docInterface.IngestSourceClusters(buildingsLayer);
+            var contextClusters = docInterface.IngestSourceClusters(contextLayer);
 
-            if (buildingGeometry.Count == 0 && contextGeometry.Count == 0)
+            if (buildingClusters.Count == 0 && contextClusters.Count == 0)
             {
                 RhinoApp.WriteLine("Error: No geometry found on Model::Buildings or Model::Context layers.");
                 return Result.Failure;
             }
 
             // 4. Transformation & Baking
-            BakeToAnalysis(doc, buildingGeometry, outputRoot + "::Geometry", SimulationTarget.Ladybug);
-            BakeToAnalysis(doc, contextGeometry, outputRoot + "::Context", SimulationTarget.Ladybug);
+            BakeToAnalysis(doc, buildingClusters, outputRoot + "::Geometry", SimulationTarget.Ladybug);
+            BakeToAnalysis(doc, contextClusters, outputRoot + "::Context", SimulationTarget.Ladybug);
 
             // 5. Gap Analysis (No Geometry Left Behind)
-            PerformGapAnalysis(doc, buildingGeometry.Concat(contextGeometry), outputRoot);
+            PerformGapAnalysis(doc, buildingClusters.Count + contextClusters.Count, outputRoot);
 
             doc.Views.Redraw();
             RhinoApp.WriteLine("Ladybug preparation complete. All roads lead to the Matrix.");
@@ -65,25 +65,25 @@ namespace EnvAnalysisCore
             }
         }
 
-        private void BakeToAnalysis(RhinoDoc doc, List<AnalysisGeometry> geometries, string layerPath, SimulationTarget target)
+        private void BakeToAnalysis(RhinoDoc doc, Dictionary<Guid, List<AnalysisGeometry>> clusters, string layerPath, SimulationTarget target)
         {
             int layerIndex = EnsureLayer(doc, layerPath);
 
-            foreach (var item in geometries)
+            foreach (var cluster in clusters)
             {
-                // Core Transformation
-                var transformed = SimplificationLogic.Process(item.Geometry, target);
+                // Extract just the GeometryBase objects for the logic core
+                var rawGeometry = cluster.Value.Select(ag => ag.Geometry).ToList();
+
+                // Core Transformation: Process the entire cluster as one mass
+                var transformed = SimplificationLogic.ProcessCluster(rawGeometry, target);
                 
                 if (transformed != null)
                 {
                     var attr = new ObjectAttributes();
                     attr.LayerIndex = layerIndex;
                     
-                    // Traceability Tagging
-                    foreach (var id in item.SourceIds)
-                    {
-                        attr.UserDictionary.Set("SourceID_" + id.ToString(), id);
-                    }
+                    // Traceability Tagging: Tag with the Top-Level cluster ID
+                    attr.UserDictionary.Set("SourceID", cluster.Key.ToString());
 
                     doc.Objects.Add(transformed, attr);
                 }
@@ -97,11 +97,9 @@ namespace EnvAnalysisCore
             return doc.Layers.Add(path, System.Drawing.Color.Gray);
         }
 
-        private void PerformGapAnalysis(RhinoDoc doc, IEnumerable<AnalysisGeometry> ingested, string rootPath)
+        private void PerformGapAnalysis(RhinoDoc doc, int totalClusters, string rootPath)
         {
-            // Simplified logic to ensure every unique source ID was processed
-            // In a full implementation, we'd compare the Receipt Catalog vs the Baked IDs
-            RhinoApp.WriteLine($"Audit: Processed {ingested.Count()} geometry clusters.");
+            RhinoApp.WriteLine($"Audit: Processed {totalClusters} geometry clusters.");
         }
     }
 }

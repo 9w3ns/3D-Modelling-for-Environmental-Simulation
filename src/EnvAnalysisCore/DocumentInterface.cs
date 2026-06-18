@@ -23,32 +23,30 @@ namespace EnvAnalysisCore
         /// <summary>
         /// Crawls the document for "Source" geometry based on strict layer conventions.
         /// Handles nested blocks using the "Inherit from Instance" rule.
+        /// Returns geometry grouped by the Top-Level object ID (for clustering).
         /// </summary>
-        public List<AnalysisGeometry> IngestSourceGeometry(string rootLayerName)
+        public Dictionary<Guid, List<AnalysisGeometry>> IngestSourceClusters(string rootLayerName)
         {
-            var results = new List<AnalysisGeometry>();
+            var clusters = new Dictionary<Guid, List<AnalysisGeometry>>();
             var rootLayer = _doc.Layers.FindName(rootLayerName);
             
-            if (rootLayer == null) return results;
-
-            // Find all objects on the root layer and its sub-layers
-            var settings = new ObjectEnumeratorSettings
-            {
-                LayerIndexFilter = rootLayer.Index,
-                NormalObjects = true,
-                LockedObjects = true,
-                ActiveObjects = true
-            };
+            if (rootLayer == null) return clusters;
 
             var rhObjs = _doc.Objects.FindByLayer(rootLayerName);
-            if (rhObjs == null) return results;
+            if (rhObjs == null) return clusters;
 
             foreach (var rhObj in rhObjs)
             {
-                ProcessObject(rhObj, results, rootLayerName);
+                var geoList = new List<AnalysisGeometry>();
+                ProcessObject(rhObj, geoList, rootLayerName);
+                
+                if (geoList.Count > 0)
+                {
+                    clusters[rhObj.Id] = geoList;
+                }
             }
 
-            return results;
+            return clusters;
         }
 
         private void ProcessObject(RhinoObject rhObj, List<AnalysisGeometry> results, string contextLayer)
@@ -56,7 +54,6 @@ namespace EnvAnalysisCore
             if (rhObj is InstanceObject blockInstance)
             {
                 // Rule: Inherit from Instance
-                // All geometry inside this block inherits the role of the instance's layer
                 TraverseBlock(blockInstance, results, contextLayer);
             }
             else

@@ -35,34 +35,43 @@ namespace EnvAnalysisCore
     {
         /// <summary>
         /// Orchestrates simplification based on the target simulation engine.
+        /// Accepts a cluster of geometries (e.g., all parts of a building block) to process together.
         /// </summary>
-        public static GeometryBase Process(GeometryBase input, SimulationTarget target)
+        public static GeometryBase ProcessCluster(List<GeometryBase> cluster, SimulationTarget target)
         {
+            if (cluster == null || cluster.Count == 0) return null;
+
             switch (target)
             {
                 case SimulationTarget.Ladybug:
-                    return PlanarizeForLadybug(input);
+                    return PlanarizeForLadybug(cluster);
                 case SimulationTarget.HoneybeeRadiance:
-                    return PlanarizeForRadiance(input);
+                    return PlanarizeForRadiance(cluster); // Pass the whole list
                 case SimulationTarget.HoneybeeEnergy:
-                    return PrepareForEnergy(input);
+                    return PrepareForEnergy(cluster); // Pass the whole list
                 default:
-                    return input;
+                    return cluster[0];
             }
         }
 
-        private static Brep PlanarizeForLadybug(GeometryBase input)
+        private static Brep PlanarizeForLadybug(List<GeometryBase> cluster)
         {
-            if (input == null) return null;
+            if (cluster == null || cluster.Count == 0) return null;
 
-            BoundingBox bbox = input.GetBoundingBox(true);
+            // Get combined bounding box for the entire cluster
+            BoundingBox bbox = BoundingBox.Empty;
+            foreach (var geo in cluster)
+            {
+                bbox.Union(geo.GetBoundingBox(true));
+            }
+
             if (!bbox.IsValid) return null;
 
             double height = bbox.Max.Z - bbox.Min.Z;
             if (height <= 0.01) return null;
 
-            // Use the robust Raycast Voxelization method
-            Curve footprint = GetRaycastFootprint(new List<GeometryBase> { input }, bbox);
+            // Use the robust Raycast Voxelization method on the entire cluster
+            Curve footprint = GetRaycastFootprint(cluster, bbox);
 
             if (footprint != null && footprint.IsClosed)
             {
@@ -185,16 +194,16 @@ namespace EnvAnalysisCore
             return null;
         }
 
-        private static Brep PlanarizeForRadiance(GeometryBase input)
+        private static Brep PlanarizeForRadiance(List<GeometryBase> cluster)
         {
             // Radiance Goal: Planar Brep | Low (Simplified, flat)
-            return PlanarizeForLadybug(input);
+            return PlanarizeForLadybug(cluster);
         }
 
-        private static Brep PrepareForEnergy(GeometryBase input)
+        private static Brep PrepareForEnergy(List<GeometryBase> cluster)
         {
             // Energy Goal: Closed Brep (Watertight) | Low (Simplified)
-            return PlanarizeForLadybug(input);
+            return PlanarizeForLadybug(cluster);
         }
 
         private static Brep PlanarizeBrep(Brep brep)
