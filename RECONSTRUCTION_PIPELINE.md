@@ -23,7 +23,7 @@ To ensure stability, the pipeline will be developed and tested in five distinct 
 
 ### Phase 3: Shrinkwrap Reconstruction (Filters 04.1 & 04.2)
 **Goal:** Rebuild floors and walls to eliminate topological errors and interior intersections.
-*   **Floors (4.1):** Extract the top-most horizontal surface of floor-tagged objects to yield a clean 2D plane.
+*   **Floors (4.1):** Extract the top-most horizontal surface of floor-tagged objects. Group these by elevation and perform a **Boolean Union** on the resulting 2D outlines to join intersecting floors on the same level into single continuous polysurfaces. Extrude these unioned boundaries to the required thickness.
 *   **Walls (4.2):** Extract the 2D footprint (bottom outline curves) of all wall-tagged objects. Perform a Boolean Union on these curves to get the outermost continuous region. Extrude this single continuous boundary to the bounding box height to create a clean, watertight exterior shell.
 
 ### Phase 4: Aperture & Shading Processing (Filters 04.3 & 04.4)
