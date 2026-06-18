@@ -6,6 +6,7 @@ Use the shared repository documentation as the source of truth:
 2. `CORE_ARCHITECTURE.md` - Technical architecture and pipeline phases.
 3. `MCP_INSTRUCTIONS.md` - Role definition and mandatory layer conventions.
 4. `MODELLING_GUIDE_*.md` - Engine-specific geometric requirements (Ladybug, Honeybee, CFD).
+5. `RECONSTRUCTION_PIPELINE.md` - The detailed 5-phase logic for the 2.5D Honeybee geometry reconstruction.
 
 ## Project Scope Mandate
 **Exclusion of Simulation Logic:** The scope of this project is strictly limited to the **3D modelling transformation and preparation** of simulation-ready geometry. Do NOT attempt to build or modify Grasshopper simulation logic (radiation, sun hours, thermal loads), as these are handled by existing standardized scripts. Focus exclusively on geometric optimization, layer compliance, and manifold verification.
