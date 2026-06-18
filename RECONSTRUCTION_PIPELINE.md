@@ -23,7 +23,12 @@ To ensure stability, the pipeline will be developed and tested in five distinct 
 
 ### Phase 3: Shrinkwrap Reconstruction (Filters 04.1 & 04.2)
 **Goal:** Rebuild floors and walls to eliminate topological errors and interior intersections.
-*   **Floors (4.1):** Extract the top-most horizontal surface of floor-tagged objects. Group these by elevation and perform a **Boolean Union** on the resulting 2D outlines to join intersecting floors on the same level into single continuous polysurfaces. Extrude these unioned boundaries to the required thickness.
+*   **Floors (4.1):** 
+    1.  **Grouping:** Group all Phase 2 floors by their top-surface elevation (rounded to 2 decimal places).
+    2.  **Outline Extraction:** Extract clean 2D footprints using a robust 3-tier fallback (Silhouette -> Naked Edges -> Bounding Box).
+    3.  **3D Extrusion:** Extrude the joined 2D outlines downward to create 3D polysurfaces.
+    4.  **Boolean Union:** Perform a 3D Boolean Union on all slabs at the same elevation. If the boolean fails, preserve the individual slabs to ensure no geometry is lost.
+    5.  **Clean & Explode:** Call `MergeCoplanarFaces` to remove internal seams, then explode the polysurfaces into individual faces for optimal Ladybug simulation performance.
 *   **Walls (4.2):** Extract the 2D footprint (bottom outline curves) of all wall-tagged objects. Perform a Boolean Union on these curves to get the outermost continuous region. Extrude this single continuous boundary to the bounding box height to create a clean, watertight exterior shell.
 
 ### Phase 4: Aperture & Shading Processing (Filters 04.3 & 04.4)

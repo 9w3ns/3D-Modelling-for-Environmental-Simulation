@@ -33,6 +33,27 @@ To prevent regressions in the geometry transformation pipeline:
     *   **Gap Analysis**: If an object fails to transform, it must be flagged on `Analysis::Errors::Untransformed` rather than being silently ignored.
     *   **Traceability**: Use Rhino UserText to link simplified outputs back to their original `SourceID`.
 
+## Reconstruction Pipeline Invariants (Anti-Hallucination Guardrails)
+
+To ensure the transformation pipeline remains deterministic and avoids "hallucinating" simplified logic that leads to data loss:
+
+### 1. The "No Geometry Left Behind" Rule
+*   **Mandate**: Every object identified as a 'Floor' or 'Wall' in Phase 2 MUST have a geometric representative in Phase 3.
+*   **Fallback Strategy**: If a high-level reconstruction (like `Silhouette.Compute`) fails, the agent MUST drop down to a lower-level fallback (Naked Edges) and finally a bounding-box representative. **Deletion of a source object is never an option.**
+
+### 2. Phase 3 Floor Logic (Strict Sequence)
+Any implementation of Phase 3 floor logic must strictly follow this sequence to avoid regressions:
+1.  **Grouping**: Group by elevation rounded to 0.01m.
+2.  **Projection**: Silhouette extraction with a 3-tier fallback.
+3.  **Unioning**: 3D Boolean Union of the extruded slabs.
+4.  **Preservation**: If Boolean Union fails, the code MUST return the original individual slabs for that level.
+5.  **Finalization**: `MergeCoplanarFaces` followed by `Explode` into faces for Ladybug.
+
+### 3. Geometry Type Robustness
+*   **Mandate**: Logic must explicitly handle `Rhino.Geometry.Extrusion`, `Rhino.Geometry.Brep`, and `Rhino.Geometry.Mesh`. 
+*   **Constraint**: Never assume `coercebrep` will return all valid geometry; use `coercegeometry` and handle type-specific extraction.
+
+---
 ## Logic Change & Error Handling Strategies
 
 ### 1. Pure Geometry Transformation (Stateless)

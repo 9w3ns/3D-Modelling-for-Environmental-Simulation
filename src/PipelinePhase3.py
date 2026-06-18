@@ -132,8 +132,14 @@ def run_phase_3():
                         final_breps = level_breps
                         
                     for fb in final_breps:
-                        new_id = sc.doc.Objects.AddBrep(fb)
-                        if new_id: rs.ObjectLayer(new_id, floor_target)
+                        # Merge coplanar faces to clean up seams from Boolean Union
+                        fb.MergeCoplanarFaces(sc.doc.ModelAbsoluteTolerance)
+                        
+                        # Explode into individual surfaces for Ladybug
+                        for face in fb.Faces:
+                            face_brep = face.DuplicateFace(False)
+                            new_id = sc.doc.Objects.AddBrep(face_brep)
+                            if new_id: rs.ObjectLayer(new_id, floor_target)
 
         # --- PART 2: Walls (Top-Face Outline Extrusion) ---
         print("Phase 3: Reconstructing walls from top-face outlines...")
