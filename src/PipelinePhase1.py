@@ -8,7 +8,7 @@ def is_glass(obj_id):
     return False
 
 def run_phase_1():
-    source_layer = "Target Geometry 2"
+    source_layer = "Target Geometry 3"
     target_layer = "Analysis::Phase1"
     
     rs.EnableRedraw(False)
@@ -52,9 +52,11 @@ def run_phase_1():
                             to_check.append(e)
             instances = new_instances
                 
-        print(f"Phase 1: Filtering {len(to_check)} raw geometries...")
+        print(f"Phase 1: Filtering {len(to_check)} raw geometries and removing duplicates...")
         survivors = []
         discarded = 0
+        duplicates = 0
+        seen_signatures = set()
         
         for oid in to_check:
             # Filter 01: Purge non-Brep/Mesh (curves, points)
@@ -63,16 +65,33 @@ def run_phase_1():
                 discarded += 1
                 continue
                 
-            # Protect Glass/Apertures
-            if is_glass(oid):
-                survivors.append(oid)
-                continue
-                
-            # Filter 02: Bounding Box checks for small/thin details
+            # Deduplication: Check if we've seen this geometry before
             bbox = rs.BoundingBox(oid)
             if not bbox:
                 rs.DeleteObject(oid)
                 discarded += 1
+                continue
+            
+            # Create a signature: Centroid + Area (rounded to 3 decimals to handle float drift)
+            centroid = rs.SurfaceAreaCentroid(oid)[0] if (rs.IsSurface(oid) or rs.IsPolysurface(oid)) else rs.MeshAreaCentroid(oid)
+            if not centroid:
+                centroid = rs.BoxCenter(bbox)
+            
+            area = rs.Area(oid) or 0
+            
+            # Signature = (x, y, z, area)
+            sig = (round(centroid.X, 3), round(centroid.Y, 3), round(centroid.Z, 3), round(area, 3))
+            
+            if sig in seen_signatures:
+                rs.DeleteObject(oid)
+                duplicates += 1
+                continue
+            
+            seen_signatures.add(sig)
+
+            # Protect Glass/Apertures
+            if is_glass(oid):
+                survivors.append(oid)
                 continue
                 
             x = rs.Distance(bbox[0], bbox[1])
@@ -110,7 +129,7 @@ def run_phase_1():
             survivors.append(oid)
             
         elapsed = time.time() - start_time
-        return f"Phase 1 Complete in {elapsed:.1f}s. Survivors: {len(survivors)}, Discarded: {discarded}"
+        return f"Phase 1 Complete in {elapsed:.1f}s. Survivors: {len(survivors)}, Discarded: {discarded}, Duplicates: {duplicates}"
         
     except Exception as e:
         return f"Error during Phase 1: {str(e)}"

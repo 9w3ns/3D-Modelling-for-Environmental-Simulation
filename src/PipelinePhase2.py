@@ -1,4 +1,6 @@
 import rhinoscriptsyntax as rs
+import Rhino
+import scriptcontext as sc
 import time
 
 def is_glass(obj_id):
@@ -14,51 +16,90 @@ def is_glass(obj_id):
             return True
     return False
 
-def get_category(oid):
-    # 1. Apertures
+def get_category_and_data(oid):
+    """Returns (Category, ExtraData) where ExtraData might be aperture curves from voids."""
+    # 1. Apertures (Pre-defined glass)
     if is_glass(oid): 
-        return "Apertures"
+        return "Apertures", None
         
     bbox = rs.BoundingBox(oid)
     if not bbox: 
-        return "Shading"
+        return "Shading", None
         
     dx = rs.Distance(bbox[0], bbox[1])
     dy = rs.Distance(bbox[0], bbox[3])
     dz = rs.Distance(bbox[0], bbox[4])
     
     # 2. Floors
-    # Z thickness is roughly 10-50cm (using 5cm-60cm for safety tolerance)
+    # Z thickness is roughly 10-50cm
     if 0.05 <= dz <= 0.60:
-        # Ensure it's horizontal (X and Y are significantly larger than Z)
+        # Ensure it's horizontal
         if dx > dz * 1.5 and dy > dz * 1.5:
-            return "Floors"
+            area = rs.Area(oid)
+            if area and area >= 300:
+                return "Floors", None
+            else:
+                return "Shading", None # Small floors become shading
             
-    # 3. Walls
-    # Z (Height) should be at least 1.5m
+    # 3. Walls & Void Detection
+    is_wall = False
+    aperture_curves = []
+    
+    # Standard height check
     if dz >= 1.5:
-        # If X is the thickness (orthogonal wall)
-        if 0.05 <= dx <= 0.45 and dy > dx * 1.5:
-            return "Walls"
-        # If Y is the thickness (orthogonal wall)
-        if 0.05 <= dy <= 0.45 and dx > dy * 1.5:
-            return "Walls"
+        # Check thickness
+        thick = min(dx, dy)
+        if 0.001 <= thick <= 0.60:
+            is_wall = True
+        else:
+            # Fallback for angled walls using volume/area (supports Breps and Meshes)
+            vol = None
+            area = None
             
-        # Fallback for diagonal/angled walls
-        # If both DX and DY are large, the bounding box is a square but the wall is thin inside it.
-        if dx > 0.45 and dy > 0.45:
-            # Approximate thickness = Volume / (Area / 2)
-            if rs.IsPolysurfaceClosed(oid):
-                vol = rs.SurfaceVolume(oid)
-                area = rs.Area(oid)
-                if vol and area and area > 0:
-                    approx_thick = vol[0] / (area / 2.0)
-                    if 0.05 <= approx_thick <= 0.45:
-                        return "Walls"
+            if rs.IsPolysurface(oid) and rs.IsPolysurfaceClosed(oid):
+                v_res = rs.SurfaceVolume(oid)
+                a_res = rs.Area(oid)
+                if v_res and a_res:
+                    vol, area = v_res[0], a_res
+            elif rs.IsMesh(oid):
+                v_res = rs.MeshVolume(oid)
+                a_res = rs.MeshArea(oid)
+                if v_res and a_res:
+                    vol, area = v_res[0], a_res[1]
+            
+            if vol is not None and area and area > 0:
+                approx_thick = vol / (area / 2.0)
+                if 0.001 <= approx_thick <= 0.60:
+                    is_wall = True
+            
+            # Final fallback: If it's a single surface or open mesh, check its "verticality"
+            if not is_wall:
+                # If it's very thin in one horizontal dimension compared to its height
+                # (Catching single-face vertical planes)
+                if min(dx, dy) < 0.1 and dz > min(dx, dy) * 2:
+                    is_wall = True
                         
-    # 4. Shading
-    # If it passes detail filters but isn't a floor, wall, or window, it's shading.
-    return "Shading"
+    if is_wall:
+        # Analyze topology for voids (Apertures)
+        try:
+            brep = rs.coercebrep(oid)
+            if brep:
+                for face in brep.Faces:
+                    # Find inner loops (holes)
+                    for loop in face.Loops:
+                        if loop.LoopType == Rhino.Geometry.BrepLoopType.Inner:
+                            # Extract the loop as a curve
+                            curve = loop.To3dCurve()
+                            if curve:
+                                aperture_curves.append(curve)
+        except Exception as e:
+            # If void detection fails (e.g. on a complex mesh), we still keep it as a wall
+            # but log the issue if necessary.
+            pass
+        return "Walls", aperture_curves
+                        
+    # 4. Shading fallback
+    return "Shading", None
 
 def run_phase_2():
     source_layer = "Analysis::Phase1"
@@ -92,15 +133,35 @@ def run_phase_2():
         if not objs:
             return "No objects found on " + source_layer
             
-        print(f"Phase 2: Categorizing {len(objs)} objects...")
-        copied_objs = rs.CopyObjects(objs)
+        print(f"Phase 2: Categorizing {len(objs)} objects and generating missing apertures...")
         
         counts = {"Floors": 0, "Walls": 0, "Apertures": 0, "Shading": 0}
         
-        for obj in copied_objs:
-            cat = get_category(obj)
-            rs.ObjectLayer(obj, f"{base_target}::{cat}")
-            counts[cat] += 1
+        for oid in objs:
+            try:
+                # Copy to target
+                new_obj = rs.CopyObject(oid)
+                if not new_obj: continue
+                
+                cat, extra = get_category_and_data(oid)
+                
+                rs.ObjectLayer(new_obj, f"{base_target}::{cat}")
+                counts[cat] += 1
+                
+                # Handle generated apertures from voids
+                if extra: # extra is a list of curves
+                    for crv in extra:
+                        # Create planar surface from loop
+                        planar_breps = Rhino.Geometry.Brep.CreatePlanarBreps(crv, 0.01)
+                        if planar_breps:
+                            for b in planar_breps:
+                                ap_id = sc.doc.Objects.AddBrep(b)
+                                if ap_id:
+                                    rs.ObjectLayer(ap_id, f"{base_target}::Apertures")
+                                    counts["Apertures"] += 1
+            except Exception as e:
+                print(f"Warning: Failed to process object {oid}: {str(e)}")
+                continue
             
         # Hide Phase 1 layer so we only see Phase 2
         rs.LayerVisible(source_layer, False)
