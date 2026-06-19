@@ -44,7 +44,6 @@ def smooth_closed_polyline(polyline_curve, epsilon):
     pts = list(polyline)
     if len(pts) < 4: return polyline_curve
     
-    # Find point furthest from start to split the closed loop safely
     max_d = -1
     idx_b = 0
     for i in range(len(pts)-1):
@@ -98,7 +97,6 @@ def process_geometry(geometry, xform, is_glass_override):
             if bbox_area > 0 and (area / bbox_area) < 0.55 and diag < 10.0:
                 return []
                 
-    # Deduplication
     pt = bbox.Center
     pt.Transform(xform)
     sig = (round(pt.X, 3), round(pt.Y, 3), round(pt.Z, 3), round(area, 3))
@@ -135,24 +133,8 @@ def extract_meshes(geometry, xform=Rhino.Geometry.Transform.Identity, is_glass_o
     else:
         return process_geometry(geometry, xform, is_glass_override)
 
-def create_solid_footprint(curves, z_curr, slice_interval, res=2.0, smoothing_tol=1.5):
-    if not curves: return None
-    
-    bbox = Rhino.Geometry.BoundingBox.Empty
-    for c in curves:
-        bbox.Union(c.GetBoundingBox(True))
-        
-    x_min = bbox.Min.X - res*3
-    x_max = bbox.Max.X + res*3
-    y_min = bbox.Min.Y - res*3
-    y_max = bbox.Max.Y + res*3
-    
-    x_steps = int((x_max - x_min) / res)
-    y_steps = int((y_max - y_min) / res)
-    
+def generate_eroded_grid(curves, res, x_min, y_min, x_steps, y_steps):
     grid = [[0 for _ in range(y_steps)] for _ in range(x_steps)]
-    
-    # Rasterize
     for crv in curves:
         length = crv.GetLength()
         if length == 0: continue
@@ -166,7 +148,6 @@ def create_solid_footprint(curves, z_curr, slice_interval, res=2.0, smoothing_to
                 if 0 <= i < x_steps and 0 <= j < y_steps:
                     grid[i][j] = 1
                     
-    # Dilate (Thicken walls to bridge gaps like doors/windows)
     grid_dilated = [[grid[i][j] for j in range(y_steps)] for i in range(x_steps)]
     dirs_dilate = [(0,1), (0,-1), (1,0), (-1,0), (1,1), (-1,-1), (1,-1), (-1,1)]
     for i in range(1, x_steps-1):
@@ -175,7 +156,6 @@ def create_solid_footprint(curves, z_curr, slice_interval, res=2.0, smoothing_to
                 for dx, dy in dirs_dilate:
                     grid_dilated[i+dx][j+dy] = 1
                     
-    # Flood fill from (0,0) (Outside)
     q = deque()
     q.append((0, 0))
     grid_dilated[0][0] = 2
@@ -189,24 +169,38 @@ def create_solid_footprint(curves, z_curr, slice_interval, res=2.0, smoothing_to
                     grid_dilated[nx][ny] = 2
                     q.append((nx, ny))
                     
-    # Generate cells for solid (not 2)
-    # EROSION STEP: To fix the "bloated" look, we must erode the shape by 1 cell 
-    # to reverse the 1-cell dilation we did earlier.
     grid_eroded = [[grid_dilated[i][j] for j in range(y_steps)] for i in range(x_steps)]
-    
     for i in range(1, x_steps-1):
         for j in range(1, y_steps-1):
-            if grid_dilated[i][j] != 2: # It is solid inside
-                # If it touches the outside (2), it gets eroded
+            if grid_dilated[i][j] != 2:
                 for dx, dy in dirs_dilate:
                     if grid_dilated[i+dx][j+dy] == 2:
                         grid_eroded[i][j] = 2
                         break
-                        
+    return grid_eroded
+
+def grids_are_similar(g1, g2, x_steps, y_steps, threshold=0.95):
+    if g1 is None or g2 is None: return False
+    solid1 = 0
+    solid2 = 0
+    overlap = 0
+    for i in range(x_steps):
+        for j in range(y_steps):
+            s1 = (g1[i][j] != 2)
+            s2 = (g2[i][j] != 2)
+            if s1: solid1 += 1
+            if s2: solid2 += 1
+            if s1 and s2: overlap += 1
+            
+    m = max(solid1, solid2)
+    if m == 0: return True
+    return (overlap / float(m)) >= threshold
+
+def grid_to_smoothed_curves(grid, z_curr, res, x_min, y_min, x_steps, y_steps, smoothing_tol):
     cell_curves = []
     for i in range(x_steps):
         for j in range(y_steps):
-            if grid_eroded[i][j] != 2:
+            if grid[i][j] != 2:
                 cx = x_min + i * res + res/2.0
                 cy = y_min + j * res + res/2.0
                 hs = res / 2.0
@@ -219,38 +213,39 @@ def create_solid_footprint(curves, z_curr, slice_interval, res=2.0, smoothing_to
                 ]
                 cell_curves.append(Rhino.Geometry.PolylineCurve(pts))
                 
-    if not cell_curves: return None
+    if not cell_curves: return []
     
     unioned = Rhino.Geometry.Curve.CreateBooleanUnion(cell_curves, 0.01)
-    if not unioned: return None
+    if not unioned: return []
     
-    extrusions = []
+    smoothed = []
     for u_crv in unioned:
-        # Smooth the jagged voxel perimeter using RDP
-        smoothed_crv = smooth_closed_polyline(u_crv, smoothing_tol)
-        
-        ext = Rhino.Geometry.Extrusion.Create(smoothed_crv, slice_interval, True)
-        if ext: extrusions.append(ext.ToBrep())
-        
-    return extrusions
+        smoothed.append(smooth_closed_polyline(u_crv, smoothing_tol))
+    return smoothed
 
 def run_ladybug_mass_extraction():
     target_layer = "Target Geometry"
     output_layer = "Analysis::Ladybug_Test_Output"
-    slice_interval = 3.0
-    grid_resolution = 1.0 # Reduced from 2.0 to 1.0 for tighter fit
-    smoothing_tolerance = 2.0 # Increased from 1.5 to 2.0 for a cleaner, simpler outline
+    contour_layer = "Analysis::Ladybug_Test_Contours"
+    slice_interval = 1.0 # High resolution slicing
+    grid_resolution = 1.0
+    smoothing_tolerance = 2.0
+    similarity_threshold = 0.95
     
     rs.EnableRedraw(False)
     start_time = time.time()
     
     try:
-        # Setup layers
         if not rs.IsLayer("Analysis"): rs.AddLayer("Analysis")
         if not rs.IsLayer(output_layer): rs.AddLayer("Ladybug_Test_Output", (255, 150, 0), parent="Analysis")
         else:
             old = rs.ObjectsByLayer(output_layer)
             if old: rs.DeleteObjects(old)
+            
+        if not rs.IsLayer(contour_layer): rs.AddLayer("Ladybug_Test_Contours", (0, 200, 255), parent="Analysis")
+        else:
+            old_c = rs.ObjectsByLayer(contour_layer)
+            if old_c: rs.DeleteObjects(old_c)
             
         print("Gathering and filtering Target Geometry...")
         seen_signatures.clear()
@@ -270,7 +265,6 @@ def run_ladybug_mass_extraction():
             print("No valid geometry extracted.")
             return
             
-        # Join meshes for faster intersection
         raycast_mesh = Rhino.Geometry.Mesh()
         for m in all_meshes:
             raycast_mesh.Append(m)
@@ -279,21 +273,25 @@ def run_ladybug_mass_extraction():
         z_min = bbox.Min.Z
         z_max = bbox.Max.Z
         
+        # Setup Global Grid
+        global_x_min = bbox.Min.X - grid_resolution * 3
+        global_x_max = bbox.Max.X + grid_resolution * 3
+        global_y_min = bbox.Min.Y - grid_resolution * 3
+        global_y_max = bbox.Max.Y + grid_resolution * 3
+        x_steps = int((global_x_max - global_x_min) / grid_resolution)
+        y_steps = int((global_y_max - global_y_min) / grid_resolution)
+        
         print("Slicing from Z={:.1f} to {:.1f} in {}m intervals...".format(z_min, z_max, slice_interval))
         
         z_curr = z_min
-        tier_breps = []
+        blocks = [] # {"grid": grid, "z_start": float, "z_end": float}
         
         while z_curr < z_max:
-            # Fix "Floating" issue: Take 3 slices per tier to ensure we don't miss short platforms
             z_top = min(z_curr + slice_interval, z_max)
-            actual_interval = z_top - z_curr
-            
             intersect_curves = []
             
-            # Slice at bottom, middle, and top of the tier
-            slice_heights = [z_curr + 0.1, z_curr + actual_interval / 2.0, z_top - 0.1]
-            
+            # 2 Slices per meter to ensure we catch short platform edges
+            slice_heights = [z_curr + 0.1, z_top - 0.1]
             for hz in slice_heights:
                 if hz >= z_max: continue
                 plane = Rhino.Geometry.Plane(Rhino.Geometry.Point3d(0,0,hz), Rhino.Geometry.Vector3d.ZAxis)
@@ -303,13 +301,28 @@ def run_ladybug_mass_extraction():
                         intersect_curves.append(c.ToPolylineCurve())
                 
             if intersect_curves:
-                exts = create_solid_footprint(intersect_curves, z_curr, actual_interval, grid_resolution, smoothing_tolerance)
-                if exts:
-                    tier_breps.extend(exts)
+                grid = generate_eroded_grid(intersect_curves, grid_resolution, global_x_min, global_y_min, x_steps, y_steps)
+                
+                # Compare with previous block to merge identical vertical slices
+                if blocks and grids_are_similar(blocks[-1]["grid"], grid, x_steps, y_steps, similarity_threshold):
+                    blocks[-1]["z_end"] = z_top
+                else:
+                    blocks.append({"grid": grid, "z_start": z_curr, "z_end": z_top})
                     
             z_curr += slice_interval
             
-        print("Tier processing complete. Generated {} tier masses. Unioning...".format(len(tier_breps)))
+        print("Tier grouping complete. Found {} distinct vertical blocks. Extruding and Unioning...".format(len(blocks)))
+        
+        tier_breps = []
+        for b in blocks:
+            crvs = grid_to_smoothed_curves(b["grid"], b["z_start"], grid_resolution, global_x_min, global_y_min, x_steps, y_steps, smoothing_tolerance)
+            for c in crvs:
+                # Bake the contour curve so the user can see the 2D footprint process
+                contour_id = sc.doc.Objects.AddCurve(c)
+                if contour_id: rs.ObjectLayer(contour_id, contour_layer)
+                
+                ext = Rhino.Geometry.Extrusion.Create(c, b["z_end"] - b["z_start"], True)
+                if ext: tier_breps.append(ext.ToBrep())
         
         if tier_breps:
             final_breps = tier_breps
