@@ -235,7 +235,7 @@ def run_ladybug_mass_extraction():
     contour_layer = "Analysis::Ladybug_Test_Contours"
     slice_interval = 1.0 # Changed contour distance back to 1.0m
     grid_resolution = 1.0
-    smoothing_tolerance = 2.0
+    smoothing_tolerance = 1.0 # Reverted to 1.0 as it works best for the user
     similarity_threshold = 0.75 # Reverted to 0.75 as requested
     
     rs.EnableRedraw(False)
