@@ -36,7 +36,7 @@ def get_category_and_data(oid):
         # Ensure it's horizontal
         if dx > dz * 1.5 and dy > dz * 1.5:
             area = rs.Area(oid)
-            if area and area >= 300:
+            if area and area >= 30:
                 return "Floors", None
             else:
                 return "Shading", None # Small floors become shading

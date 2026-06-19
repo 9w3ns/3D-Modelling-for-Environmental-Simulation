@@ -49,7 +49,14 @@ Any implementation of Phase 3 floor logic must strictly follow this sequence to 
 4.  **Preservation**: If Boolean Union fails, the code MUST return the original individual slabs for that level.
 5.  **Finalization**: `MergeCoplanarFaces` followed by `Explode` into faces for Ladybug.
 
-### 3. Geometry Type Robustness
+### 3. Phase 3 Wall Logic (OBB-Union Invariant)
+To ensure watertight urban envelopes and accurate representation of angled architecture:
+1.  **OBB Generation**: Each wall segment MUST be converted into an **Oriented Bounding Box (OBB)** using `Rhino.Geometry.Box.CreateFromBrep`. This derived **Local Principal Axis state** is mandatory for angled walls.
+2.  **Volumetric Union**: Perform a **3D Boolean Union** of all OBBs at each level. Use an **Iterative Union** (one-by-one) to maximize success.
+3.  **No Deletion**: If the Boolean Union fails, the agent MUST preserve the individual OBBs to maintain geometric coverage.
+4.  **Optimization**: Always apply `MergeCoplanarFaces` to the resulting unioned polysurface.
+
+### 4. Geometry Type Robustness
 *   **Mandate**: Logic must explicitly handle `Rhino.Geometry.Extrusion`, `Rhino.Geometry.Brep`, and `Rhino.Geometry.Mesh`. 
 *   **Constraint**: Never assume `coercebrep` will return all valid geometry; use `coercegeometry` and handle type-specific extraction.
 

@@ -2,6 +2,7 @@ import rhinoscriptsyntax as rs
 import Rhino
 import scriptcontext as sc
 import time
+import System
 
 def run_phase_3():
     # 1. Setup
@@ -60,89 +61,74 @@ def run_phase_3():
                     outline_curves = []
                     
                     geo = rs.coercegeometry(oid)
-                    if not geo:
-                        print(f"    ERROR: Could not coerce geometry for {oid}")
-                        continue
+                    if not geo: continue
 
-                    if isinstance(geo, Rhino.Geometry.Mesh):
-                        polys = geo.GetOutlines(proj_plane)
-                        if polys:
-                            for p in polys: outline_curves.append(p.ToPolylineCurve())
-                    else:
-                        # Convert to Brep if it's an Extrusion or other surface type
-                        br = None
-                        if isinstance(geo, Rhino.Geometry.Brep): br = geo
-                        elif isinstance(geo, Rhino.Geometry.Extrusion): br = geo.ToBrep()
-                        
-                        if br:
-                            silhouettes = Rhino.Geometry.Silhouette.Compute(br, Rhino.Geometry.SilhouetteType.Projected, proj_plane, 0.1, 0.01)
-                            if silhouettes:
-                                for s in silhouettes: outline_curves.append(s.Curve)
-                            
-                            if not outline_curves:
-                                # FALLBACK 1: Naked Edges
-                                naked = br.DuplicateNakedEdgeCurves()
-                                if naked:
-                                    xform = Rhino.Geometry.Transform.PlanarProjection(proj_plane)
-                                    for c in naked:
-                                        c.Transform(xform)
-                                        outline_curves.append(c)
+                    br = None
+                    if isinstance(geo, Rhino.Geometry.Brep): br = geo
+                    elif isinstance(geo, Rhino.Geometry.Extrusion): br = geo.ToBrep()
+                    elif isinstance(geo, Rhino.Geometry.Mesh): br = Rhino.Geometry.Brep.CreateFromMesh(geo, True)
                     
-                    if not outline_curves:
-                        # FALLBACK 2: Bounding Box Rectangle (last resort)
-                        if bbox:
-                            rect = Rhino.Geometry.Rectangle3d(proj_plane, Rhino.Geometry.Interval(bbox[0].X, bbox[6].X), Rhino.Geometry.Interval(bbox[0].Y, bbox[6].Y))
-                            outline_curves.append(rect.ToNurbsCurve())
-                            print(f"    Warning: Used BBox fallback for {oid}")
+                    if br:
+                        silhouettes = Rhino.Geometry.Silhouette.Compute(br, Rhino.Geometry.SilhouetteType.Projecting, Rhino.Geometry.Vector3d.ZAxis, 0.1, 0.01)
+                        if silhouettes:
+                            xform = Rhino.Geometry.Transform.PlanarProjection(proj_plane)
+                            for s in silhouettes:
+                                if s.Curve:
+                                    c = s.Curve
+                                    c.Transform(xform)
+                                    outline_curves.append(c)
+                        
+                        if not outline_curves:
+                            # FALLBACK 1: Naked Edges
+                            naked = br.DuplicateNakedEdgeCurves()
+                            if naked:
+                                xform = Rhino.Geometry.Transform.PlanarProjection(proj_plane)
+                                for c in naked:
+                                    c.Transform(xform)
+                                    outline_curves.append(c)
+                    
+                    if not outline_curves and bbox:
+                        # FALLBACK 2: Bounding Box Rectangle
+                        rect = Rhino.Geometry.Rectangle3d(proj_plane, Rhino.Geometry.Interval(bbox[0].X, bbox[6].X), Rhino.Geometry.Interval(bbox[0].Y, bbox[6].Y))
+                        outline_curves.append(rect.ToNurbsCurve())
                     
                     if outline_curves:
                         joined = Rhino.Geometry.Curve.JoinCurves(outline_curves, 0.1)
                         if joined:
                             for j_crv in joined:
-                                if not j_crv.IsClosed:
-                                    print(f"    WARNING: Open curve found for {oid}, attempting to close...")
-                                    j_crv.MakeClosed(0.1)
-                                
+                                if not j_crv.IsClosed: j_crv.MakeClosed(0.1)
                                 if j_crv.IsClosed:
                                     # Create individual 3D slab
-                                extrusion = Rhino.Geometry.Extrusion.Create(j_crv, -max_thickness, True)
-                                if extrusion:
-                                    level_breps.append(extrusion.ToBrep())
-                                else:
-                                    planar = Rhino.Geometry.Brep.CreatePlanarBreps(j_crv, 0.01)
-                                    if planar:
-                                        for p_br in planar:
-                                            path = Rhino.Geometry.LineCurve(Rhino.Geometry.Point3d(0,0,0), Rhino.Geometry.Point3d(0,0,-max_thickness))
-                                            slab = p_br.Faces[0].CreateExtrusion(path, True)
-                                            if slab: level_breps.append(slab)
+                                    extrusion = Rhino.Geometry.Extrusion.Create(j_crv, -max_thickness, True)
+                                    if extrusion:
+                                        level_breps.append(extrusion.ToBrep())
+                                    else:
+                                        planar = Rhino.Geometry.Brep.CreatePlanarBreps(j_crv, 0.01)
+                                        if planar:
+                                            for p_br in planar:
+                                                path = Rhino.Geometry.LineCurve(Rhino.Geometry.Point3d(0,0,0), Rhino.Geometry.Point3d(0,0,-max_thickness))
+                                                slab = p_br.Faces[0].CreateExtrusion(path, True)
+                                                if slab: level_breps.append(slab)
                 
                 if level_breps:
-                    # Perform 3D Boolean Union on all slabs for this level
+                    # 3D Boolean Union
                     final_breps = []
                     if len(level_breps) > 1:
                         unioned = Rhino.Geometry.Brep.CreateBooleanUnion(level_breps, sc.doc.ModelAbsoluteTolerance)
-                        if unioned and len(unioned) > 0:
-                            final_breps = unioned
-                            print(f"    Success: Unioned {len(level_breps)} slabs into {len(unioned)} objects.")
-                        else:
-                            # FALLBACK: If boolean fails, keep the original pieces so nothing is lost
-                            final_breps = level_breps
-                            print(f"    Warning: Boolean Union failed for Level {elevation}m. Preserving {len(level_breps)} individual slabs.")
+                        final_breps = unioned if (unioned and len(unioned) > 0) else level_breps
                     else:
                         final_breps = level_breps
                         
                     for fb in final_breps:
-                        # Merge coplanar faces to clean up seams from Boolean Union
                         fb.MergeCoplanarFaces(sc.doc.ModelAbsoluteTolerance)
-                        
-                        # Explode into individual surfaces for Ladybug
                         for face in fb.Faces:
                             face_brep = face.DuplicateFace(False)
-                            new_id = sc.doc.Objects.AddBrep(face_brep)
-                            if new_id: rs.ObjectLayer(new_id, floor_target)
+                            if face_brep and face_brep.IsValid:
+                                new_id = sc.doc.Objects.AddBrep(face_brep)
+                                if new_id: rs.ObjectLayer(new_id, floor_target)
 
-        # --- PART 2: Walls (Top-Face Outline Extrusion) ---
-        print("Phase 3: Reconstructing walls from top-face outlines...")
+        # --- PART 2: Walls (Oriented Bounding Box Union) ---
+        print("Phase 3: Reconstructing walls via Oriented Bounding Box (OBB) union...")
         source_walls = rs.ObjectsByLayer(wall_source)
         
         if source_walls and level_elevations:
@@ -161,7 +147,6 @@ def run_phase_3():
                 bbox = rs.BoundingBox(oid)
                 if not bbox: continue
                 z_mid = (bbox[0].Z + bbox[6].Z) / 2.0
-                
                 best_bin = bins[0]
                 min_dist = 1e10
                 for b in bins:
@@ -171,70 +156,84 @@ def run_phase_3():
                         best_bin = b
                 wall_bins[best_bin].append(oid)
             
-            # Process levels
             for b, walls in wall_bins.items():
                 if not walls: continue
-                print(f"  Level {b[0]}m -> {b[1]}m")
-                
-                bin_ceiling_z = b[1]
-                top_outlines = []
+                print(f"  Level {b[0]}m -> {b[1]}m ({len(walls)} segments)")
+                level_wall_boxes = []
+                height = b[1] - b[0]
                 
                 for w_oid in walls:
-                    w_bbox = rs.BoundingBox(w_oid)
-                    if not w_bbox: continue
-                    w_max_z = w_bbox[6].Z
+                    geo = rs.coercegeometry(w_oid)
+                    if not geo: continue
+                    br = None
+                    if isinstance(geo, Rhino.Geometry.Brep): br = geo
+                    elif isinstance(geo, Rhino.Geometry.Extrusion): br = geo.ToBrep()
+                    elif isinstance(geo, Rhino.Geometry.Mesh): br = Rhino.Geometry.Brep.CreateFromMesh(geo, True)
                     
-                    brep = rs.coercebrep(w_oid)
-                    if not brep and rs.IsMesh(w_oid):
-                        mesh = rs.coercemesh(w_oid)
-                        if mesh: brep = Rhino.Geometry.Brep.CreateFromMesh(mesh, True)
-                    
-                    if not brep: continue
-                    
-                    for face in brep.Faces:
-                        normal = face.NormalAt(face.Domain(0).Mid, face.Domain(1).Mid)
-                        if normal.Z > 0.9: # Pointing up
-                            face_bbox = face.GetBoundingBox(True)
-                            if abs(face_bbox.Max.Z - w_max_z) < 0.2: # Is a top face
-                                for loop in face.Loops:
-                                    if loop.LoopType == Rhino.Geometry.BrepLoopType.Outer:
-                                        crv = loop.To3dCurve()
-                                        if crv and crv.IsClosed:
-                                            top_outlines.append(crv)
-                
-                if top_outlines:
-                    # Project all to the bin ceiling
-                    ceiling_plane = Rhino.Geometry.Plane(Rhino.Geometry.Point3d(0,0,bin_ceiling_z), Rhino.Geometry.Vector3d.ZAxis)
-                    xform = Rhino.Geometry.Transform.PlanarProjection(ceiling_plane)
-                    for c in top_outlines: c.Transform(xform)
-                    
-                    # Union the footprints
-                    unioned = Rhino.Geometry.Curve.CreateBooleanUnion(top_outlines, sc.doc.ModelAbsoluteTolerance)
-                    curves_to_extrude = unioned if unioned else top_outlines
-                    for crv in curves_to_extrude:
-                        # Extrude DOWNWARDS
-                            height = b[1] - b[0]
-                            if height > 0.01:
-                                extrusion = Rhino.Geometry.Extrusion.Create(crv, -height, True)
-                                if extrusion:
-                                    final_brep = extrusion.ToBrep()
-                                    new_id = sc.doc.Objects.AddBrep(final_brep)
-                                    if new_id: rs.ObjectLayer(new_id, wall_target)
-                                else:
-                                    # Fallback extrusion
-                                    planar = Rhino.Geometry.Brep.CreatePlanarBreps(crv, 0.01)
-                                    if planar:
-                                        for p_br in planar:
-                                            path = Rhino.Geometry.LineCurve(Rhino.Geometry.Point3d(0,0,0), Rhino.Geometry.Point3d(0,0,-height))
-                                            slab = p_br.Faces[0].CreateExtrusion(path, True)
-                                            if slab:
-                                                new_id = sc.doc.Objects.AddBrep(slab)
-                                                if new_id: rs.ObjectLayer(new_id, wall_target)
+                    if br:
+                        # 1. Get footprint
+                        proj_plane = Rhino.Geometry.Plane(Rhino.Geometry.Point3d(0,0,b[0]), Rhino.Geometry.Vector3d.ZAxis)
+                        silhouettes = Rhino.Geometry.Silhouette.Compute(br, Rhino.Geometry.SilhouetteType.Projecting, Rhino.Geometry.Vector3d.ZAxis, 0.1, 0.01)
+                        foot_curves = []
+                        if silhouettes:
+                            xf = Rhino.Geometry.Transform.PlanarProjection(proj_plane)
+                            for s in silhouettes:
+                                if s.Curve:
+                                    c = s.Curve; c.Transform(xf); foot_curves.append(c)
+                        
+                        if not foot_curves:
+                            naked = br.DuplicateNakedEdgeCurves()
+                            if naked:
+                                xf = Rhino.Geometry.Transform.PlanarProjection(proj_plane)
+                                for c in naked: c.Transform(xf); foot_curves.append(c)
+                        
+                        if foot_curves:
+                            joined = Rhino.Geometry.Curve.JoinCurves(foot_curves, 0.1)
+                            if joined:
+                                for j_crv in joined:
+                                    if not j_crv.IsClosed: j_crv.MakeClosed(0.1)
+                                    if j_crv.IsClosed:
+                                        # 2. CREATE ORIENTED BOX
+                                        planar = Rhino.Geometry.Brep.CreatePlanarBreps(j_crv, 0.1)
+                                        if planar:
+                                            face = planar[0].Faces[0]
+                                            # Correctly unpack result from FrameAt
+                                            success, plane = face.FrameAt(face.Domain(0).Mid, face.Domain(1).Mid)
+                                            if success:
+                                                obb = Rhino.Geometry.Box(plane, planar[0])
+                                                if obb.IsValid:
+                                                    # Force height to level height
+                                                    obb.Z = Rhino.Geometry.Interval(0, height)
+                                                    level_wall_boxes.append(obb.ToBrep())
 
-        # Hide Phase 2
-        if rs.IsLayer("Analysis::Phase2"):
-            rs.LayerVisible("Analysis::Phase2", False)
-        
+                if level_wall_boxes:
+                    # 4. Iterative Union
+                    print(f"    Attempting union of {len(level_wall_boxes)} OBBs...")
+                    unioned_walls = []
+                    if len(level_wall_boxes) > 1:
+                        current = level_wall_boxes[0]
+                        remaining = level_wall_boxes[1:]
+                        for i in range(len(remaining)):
+                            u = Rhino.Geometry.Brep.CreateBooleanUnion([current, remaining[i]], sc.doc.ModelAbsoluteTolerance)
+                            if u and len(u) > 0:
+                                current = u[0]
+                            else:
+                                unioned_walls.append(current)
+                                current = remaining[i]
+                        unioned_walls.append(current)
+                    else:
+                        unioned_walls = level_wall_boxes
+                        
+                    for fw in unioned_walls:
+                        if not fw or not fw.IsValid: continue
+                        fw.MergeCoplanarFaces(sc.doc.ModelAbsoluteTolerance)
+                        for face in fw.Faces:
+                            face_brep = face.DuplicateFace(False)
+                            if face_brep and face_brep.IsValid:
+                                new_id = sc.doc.Objects.AddBrep(face_brep)
+                                if new_id: rs.ObjectLayer(new_id, wall_target)
+
+        if rs.IsLayer("Analysis::Phase2"): rs.LayerVisible("Analysis::Phase2", False)
         elapsed = time.time() - start_time
         print(f"Phase 3 Complete in {elapsed:.1f}s. Levels: {len(levels) if 'levels' in locals() else 0}")
 
@@ -245,4 +244,3 @@ def run_phase_3():
         rs.EnableRedraw(True)
 
 run_phase_3()
-

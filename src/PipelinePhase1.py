@@ -8,7 +8,7 @@ def is_glass(obj_id):
     return False
 
 def run_phase_1():
-    source_layer = "Target Geometry 3"
+    source_layer = "Target Geometry"
     target_layer = "Analysis::Phase1"
     
     rs.EnableRedraw(False)

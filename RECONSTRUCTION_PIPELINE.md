@@ -29,7 +29,12 @@ To ensure stability, the pipeline will be developed and tested in five distinct 
     3.  **3D Extrusion:** Extrude the joined 2D outlines downward to create 3D polysurfaces.
     4.  **Boolean Union:** Perform a 3D Boolean Union on all slabs at the same elevation. If the boolean fails, preserve the individual slabs to ensure no geometry is lost.
     5.  **Clean & Explode:** Call `MergeCoplanarFaces` to remove internal seams, then explode the polysurfaces into individual faces for optimal Ladybug simulation performance.
-*   **Walls (4.2):** Extract the 2D footprint (bottom outline curves) of all wall-tagged objects. Perform a Boolean Union on these curves to get the outermost continuous region. Extrude this single continuous boundary to the bounding box height to create a clean, watertight exterior shell.
+*   **Walls (4.2):** 
+    1.  **Grouping**: Group all Phase 2 walls by the established floor levels.
+    2.  **Footprint Extraction**: Extract 2D footprints for each wall segment using the 3-tier fallback (Silhouette -> Naked Edges -> Bounding Box).
+    3.  **OBB Generation**: For each footprint, calculate its **Oriented Bounding Box (OBB)** using `Box.CreateFromBrep` to derive the **Local Principal Axis state**. This accurately represents angled walls as clean 3D blocks.
+    4.  **Iterative 3D Boolean Union**: Perform a robust, one-by-one 3D Boolean Union of all wall OBBs at each level to create a continuous, watertight exterior shell.
+    5.  **Clean & Explode**: Call `MergeCoplanarFaces` to remove internal seams, then explode the polysurfaces into individual faces for simulation.
 
 ### Phase 4: Aperture & Shading Processing (Filters 04.3 & 04.4)
 **Goal:** Ensure apertures are strictly coplanar with the new walls, and shading is computationally light.
