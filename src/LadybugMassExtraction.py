@@ -230,7 +230,7 @@ def run_ladybug_mass_extraction():
     slice_interval = 1.0 # High resolution slicing
     grid_resolution = 1.0
     smoothing_tolerance = 2.0
-    similarity_threshold = 0.95
+    similarity_threshold = 0.80 # Set threshold to 0.80 as requested
     
     rs.EnableRedraw(False)
     start_time = time.time()
