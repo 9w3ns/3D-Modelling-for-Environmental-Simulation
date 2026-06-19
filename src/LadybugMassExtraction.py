@@ -234,9 +234,9 @@ def run_ladybug_mass_extraction():
     output_layer = "Analysis::Ladybug_Test_Output"
     contour_layer = "Analysis::Ladybug_Test_Contours"
     slice_interval = 1.0 # Changed contour distance back to 1.0m
-    grid_resolution = 1.0
+    grid_resolution = 1.0 # Reverted grid resolution back to 1.0m
     smoothing_tolerance = 1.0 # Reverted to 1.0 as it works best for the user
-    similarity_threshold = 0.75 # Reverted to 0.75 as requested
+    similarity_threshold = 0.80 # Increased to 0.80 to trigger more blocks
     
     rs.EnableRedraw(False)
     start_time = time.time()
