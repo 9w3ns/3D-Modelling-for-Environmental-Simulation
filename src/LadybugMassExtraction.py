@@ -233,10 +233,37 @@ def run_ladybug_mass_extraction():
     target_layer = "Target Geometry"
     output_layer = "Analysis::Ladybug_Test_Output"
     contour_layer = "Analysis::Ladybug_Test_Contours"
-    slice_interval = 1.0 # Changed contour distance back to 1.0m
-    grid_resolution = 1.0 # Reverted grid resolution back to 1.0m
-    smoothing_tolerance = 1.0 # Reverted to 1.0 as it works best for the user
-    similarity_threshold = 0.80 # Increased to 0.80 to trigger more blocks
+    
+    go = Rhino.Input.Custom.GetOption()
+    go.SetCommandPrompt("Press Enter to use defaults, or click options to change parameters")
+    go.AcceptNothing(True)
+    
+    opt_slice = Rhino.Input.Custom.OptionDouble(1.0)
+    opt_grid = Rhino.Input.Custom.OptionDouble(1.0)
+    opt_smooth = Rhino.Input.Custom.OptionDouble(1.0)
+    opt_sim = Rhino.Input.Custom.OptionDouble(0.80)
+    
+    go.AddOptionDouble("SliceInterval", opt_slice)
+    go.AddOptionDouble("GridResolution", opt_grid)
+    go.AddOptionDouble("SmoothingTol", opt_smooth)
+    go.AddOptionDouble("SimilarityThresh", opt_sim)
+    
+    while True:
+        get_rc = go.Get()
+        if get_rc == Rhino.Input.GetResult.Option:
+            continue
+        elif get_rc == Rhino.Input.GetResult.Cancel:
+            print("Command canceled.")
+            return
+        break
+        
+    slice_interval = opt_slice.CurrentValue
+    grid_resolution = opt_grid.CurrentValue
+    smoothing_tolerance = opt_smooth.CurrentValue
+    similarity_threshold = opt_sim.CurrentValue
+    
+    print("Using parameters - Slice: {:.2f}, Grid: {:.2f}, Smooth: {:.2f}, Similarity: {:.2f}".format(
+        slice_interval, grid_resolution, smoothing_tolerance, similarity_threshold))
     
     rs.EnableRedraw(False)
     start_time = time.time()
