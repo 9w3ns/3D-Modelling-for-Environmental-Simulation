@@ -4,6 +4,65 @@ import scriptcontext as sc
 import time
 from collections import deque
 
+# --- Ramer-Douglas-Peucker Smoothing ---
+def rdp_point_line_dist(pt, start, end):
+    vx = end.X - start.X
+    vy = end.Y - start.Y
+    wx = pt.X - start.X
+    wy = pt.Y - start.Y
+    
+    c1 = wx * vx + wy * vy
+    if c1 <= 0: return pt.DistanceTo(start)
+    c2 = vx * vx + vy * vy
+    if c2 <= c1: return pt.DistanceTo(end)
+        
+    b = c1 / c2
+    proj = Rhino.Geometry.Point3d(start.X + b * vx, start.Y + b * vy, start.Z)
+    return pt.DistanceTo(proj)
+
+def rdp_open(pts, epsilon):
+    dmax = 0.0
+    index = 0
+    end = len(pts) - 1
+    for i in range(1, end):
+        d = rdp_point_line_dist(pts[i], pts[0], pts[end])
+        if d > dmax:
+            index = i
+            dmax = d
+    if dmax > epsilon:
+        res1 = rdp_open(pts[:index+1], epsilon)
+        res2 = rdp_open(pts[index:], epsilon)
+        return res1[:-1] + res2
+    else:
+        return [pts[0], pts[end]]
+
+def smooth_closed_polyline(polyline_curve, epsilon):
+    if epsilon <= 0: return polyline_curve
+    success, polyline = polyline_curve.TryGetPolyline()
+    if not success: return polyline_curve
+    
+    pts = list(polyline)
+    if len(pts) < 4: return polyline_curve
+    
+    # Find point furthest from start to split the closed loop safely
+    max_d = -1
+    idx_b = 0
+    for i in range(len(pts)-1):
+        d = pts[0].DistanceTo(pts[i])
+        if d > max_d:
+            max_d = d
+            idx_b = i
+            
+    half1 = pts[0:idx_b+1]
+    half2 = pts[idx_b:-1] + [pts[0]]
+    
+    s1 = rdp_open(half1, epsilon)
+    s2 = rdp_open(half2, epsilon)
+    
+    final_pts = s1[:-1] + s2
+    return Rhino.Geometry.PolylineCurve(final_pts)
+# ---------------------------------------
+
 seen_signatures = set()
 
 def is_glass(layer_name):
@@ -76,7 +135,7 @@ def extract_meshes(geometry, xform=Rhino.Geometry.Transform.Identity, is_glass_o
     else:
         return process_geometry(geometry, xform, is_glass_override)
 
-def create_solid_footprint(curves, z_curr, slice_interval, res=2.0):
+def create_solid_footprint(curves, z_curr, slice_interval, res=2.0, smoothing_tol=1.5):
     if not curves: return None
     
     bbox = Rhino.Geometry.BoundingBox.Empty
@@ -167,7 +226,10 @@ def create_solid_footprint(curves, z_curr, slice_interval, res=2.0):
     
     extrusions = []
     for u_crv in unioned:
-        ext = Rhino.Geometry.Extrusion.Create(u_crv, slice_interval, True)
+        # Smooth the jagged voxel perimeter using RDP
+        smoothed_crv = smooth_closed_polyline(u_crv, smoothing_tol)
+        
+        ext = Rhino.Geometry.Extrusion.Create(smoothed_crv, slice_interval, True)
         if ext: extrusions.append(ext.ToBrep())
         
     return extrusions
@@ -177,6 +239,7 @@ def run_ladybug_mass_extraction():
     output_layer = "Analysis::Ladybug_Test_Output"
     slice_interval = 3.0
     grid_resolution = 1.0 # Reduced from 2.0 to 1.0 for tighter fit
+    smoothing_tolerance = 2.0 # Increased from 1.5 to 2.0 for a cleaner, simpler outline
     
     rs.EnableRedraw(False)
     start_time = time.time()
@@ -240,7 +303,7 @@ def run_ladybug_mass_extraction():
                         intersect_curves.append(c.ToPolylineCurve())
                 
             if intersect_curves:
-                exts = create_solid_footprint(intersect_curves, z_curr, actual_interval, grid_resolution)
+                exts = create_solid_footprint(intersect_curves, z_curr, actual_interval, grid_resolution, smoothing_tolerance)
                 if exts:
                     tier_breps.extend(exts)
                     
