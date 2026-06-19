@@ -196,6 +196,12 @@ def grids_are_similar(g1, g2, x_steps, y_steps, threshold=0.95):
     if m == 0: return True
     return (overlap / float(m)) >= threshold
 
+def union_grids(g1, g2, x_steps, y_steps):
+    for i in range(x_steps):
+        for j in range(y_steps):
+            if g2[i][j] != 2:
+                g1[i][j] = 1 # Mark as solid
+
 def grid_to_smoothed_curves(grid, z_curr, res, x_min, y_min, x_steps, y_steps, smoothing_tol):
     cell_curves = []
     for i in range(x_steps):
@@ -227,10 +233,10 @@ def run_ladybug_mass_extraction():
     target_layer = "Target Geometry"
     output_layer = "Analysis::Ladybug_Test_Output"
     contour_layer = "Analysis::Ladybug_Test_Contours"
-    slice_interval = 1.0 # High resolution slicing
+    slice_interval = 1.0 # Changed contour distance back to 1.0m
     grid_resolution = 1.0
     smoothing_tolerance = 2.0
-    similarity_threshold = 0.80 # Set threshold to 0.80 as requested
+    similarity_threshold = 0.75 # Reverted to 0.75 as requested
     
     rs.EnableRedraw(False)
     start_time = time.time()
@@ -306,8 +312,15 @@ def run_ladybug_mass_extraction():
                 # Compare with previous block to merge identical vertical slices
                 if blocks and grids_are_similar(blocks[-1]["grid"], grid, x_steps, y_steps, similarity_threshold):
                     blocks[-1]["z_end"] = z_top
+                    union_grids(blocks[-1]["grid"], grid, x_steps, y_steps)
                 else:
-                    blocks.append({"grid": grid, "z_start": z_curr, "z_end": z_top})
+                    # Don't add completely empty grids to blocks unless it's the only way
+                    solid_count = sum(1 for i in range(x_steps) for j in range(y_steps) if grid[i][j] != 2)
+                    if solid_count > 0:
+                        blocks.append({"grid": grid, "z_start": z_curr, "z_end": z_top})
+                    elif blocks:
+                        # If empty, just extend the previous block through the empty space
+                        blocks[-1]["z_end"] = z_top
                     
             z_curr += slice_interval
             
