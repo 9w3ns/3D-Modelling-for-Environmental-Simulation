@@ -5,7 +5,18 @@ Develop a robust, automated pipeline to ingest raw architectural geometry, cull 
 
 ## Phased Development Strategy
 
-To ensure stability, the pipeline will be developed and tested in five distinct phases.
+To ensure stability, the pipeline will be developed and tested in distinct phases. Note that there are two separate pathways depending on the simulation target:
+1. **Semantic Pathway (Honeybee/CFD):** Uses Phases 1-5 to classify floors, walls, and apertures for detailed multi-zone simulation.
+2. **Simple Massing Pathway (Ladybug):** Bypasses semantic classification completely to extract a single tiered shading volume.
+
+### Alternative Pathway: Tiered 2.5D Massing (Ladybug)
+**Goal:** Extract a clean, watertight, 2.5D stepped mass directly from raw architectural geometry without semantic filtering, avoiding "overfit" errors.
+*   **Step 0 (Block Explosion):** Recursively explode all block instances to expose raw Breps and Meshes.
+*   **Step 1 (Slicing):** Intersect the entire geometry cluster with horizontal planes at a fixed interval (e.g., every 3.0 meters).
+*   **Step 2 (2D Morphological Closing):** Rasterize the sliced intersection curves onto a coarse boolean grid (e.g., 2.0m resolution). Apply dilation and flood-fill (from the outside in) to generate a completely solid, watertight 2D footprint that bridges over any architectural gaps (like doors/windows).
+*   **Step 3 (3D Extrusion & Union):** Extrude the solid footprint by the slice interval to create a tier block. Perform a 3D Boolean Union on all stacked tier blocks to create a single stepped mass.
+
+---
 
 ### Phase 1: Ingestion & Base Filtering (Filters 01 & 02)
 **Goal:** Clean the raw input and expose all valid geometry while protecting critical simulation elements (like glass).
