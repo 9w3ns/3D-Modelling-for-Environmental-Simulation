@@ -36,7 +36,7 @@ foreach (var cluster in sourceClusters)
         if (info.Geometry == null) continue;
         
         // -------------------------------------------------------------
-        // NEW FILTER: Purge "Crumbs" and "Sticks" (Mullions, Handrails)
+        // NEW FILTER: Purge detailed/small elements (Area < 2.0 m2)
         // -------------------------------------------------------------
         var bbox = info.Geometry.GetBoundingBox(true);
         if (!bbox.IsValid) continue;
@@ -45,16 +45,28 @@ foreach (var cluster in sourceClusters)
         double dy = bbox.Max.Y - bbox.Min.Y;
         double dz = bbox.Max.Z - bbox.Min.Z;
         
-        var dims = new List<double> { dx, dy, dz };
-        dims.Sort(); // Smallest to largest
+        // Use Bounding Box surface area as a fast pre-filter. 
+        // Bounding Box Area is always >= True Area.
+        double bboxArea = 2.0 * ((dx * dy) + (dy * dz) + (dx * dz));
         
-        // If the MIDDLE dimension is less than 0.1m, it's thin in at least 
-        // 2 directions (e.g. a 0.02 x 0.05 x 2.0 window mullion or pipe).
-        // If the LARGEST dimension is < 0.1m, it's a tiny crumb (door knob).
-        if (dims[1] < 0.1) 
+        if (bboxArea < 2.0) 
         {
             droppedCount++;
-            continue; // Drop this geometry!
+            continue; // Fast drop!
+        }
+        
+        // If the bounding box is large (e.g. a diagonally oriented pipe, or a hollow frame), 
+        // we must compute the True Area to see if it's actually small.
+        double trueArea = bboxArea;
+        if (info.Geometry is Brep b) trueArea = Rhino.Geometry.AreaMassProperties.Compute(b)?.Area ?? bboxArea;
+        else if (info.Geometry is Extrusion e) trueArea = Rhino.Geometry.AreaMassProperties.Compute(e.ToBrep())?.Area ?? bboxArea;
+        else if (info.Geometry is Mesh m) trueArea = Rhino.Geometry.AreaMassProperties.Compute(m)?.Area ?? bboxArea;
+        else if (info.Geometry is Surface s) trueArea = Rhino.Geometry.AreaMassProperties.Compute(s)?.Area ?? bboxArea;
+
+        if (trueArea < 2.0)
+        {
+            droppedCount++;
+            continue; // True drop!
         }
         
         validGeometries.Add(info);
