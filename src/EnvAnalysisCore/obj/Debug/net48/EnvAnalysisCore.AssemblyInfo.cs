@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("EnvAnalysisCore")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c8dd13dd85aa235987ebe84ae669e664cab86225")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c225f6d85f4df091fba716a0a80b47b431c3d1ab")]
 [assembly: System.Reflection.AssemblyProductAttribute("EnvAnalysisCore")]
 [assembly: System.Reflection.AssemblyTitleAttribute("EnvAnalysisCore")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
