@@ -122,6 +122,10 @@ void ProcessObjectForIngestion(RhinoDoc d, RhinoObject rhObj, Guid parentId, str
     }
     else
     {
+        var geomType = rhObj.Geometry.ObjectType;
+        if (geomType == ObjectType.Point || geomType == ObjectType.PointSet || geomType == ObjectType.Curve)
+            return; // Purge points and curves
+            
         string matName = null;
         if (rhObj.Attributes.MaterialIndex >= 0)
         {
@@ -153,6 +157,10 @@ void TraverseBlock(RhinoDoc d, InstanceObject instance, Transform parentTransfor
         }
         else
         {
+            var geomType = innerObj.Geometry.ObjectType;
+            if (geomType == ObjectType.Point || geomType == ObjectType.PointSet || geomType == ObjectType.Curve)
+                continue; // Purge points and curves
+                
             var geometry = innerObj.Geometry.Duplicate();
             geometry.Transform(currentTransform);
 
