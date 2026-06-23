@@ -91,16 +91,19 @@ foreach (var kvp in elevationGroups.OrderBy(k => k.Key))
     BoundingBox levelBox = BoundingBox.Empty;
     foreach (var g in geosAtLevel) levelBox.Union(g.GetBoundingBox(true));
     
-    // Silhouette Extraction (Raycast)
-    Curve silhouette = GetRaycastFootprint(geosAtLevel, levelBox, zLevel);
-    if (silhouette != null && silhouette.IsClosed)
+    // Silhouette Extraction (Mathematical Projection)
+    var silhouettes = GetExactFootprint(geosAtLevel, zLevel);
+    if (silhouettes != null && silhouettes.Count > 0)
     {
-        // Extrude down by standard floor thickness (0.3m)
-        var extrusion = Extrusion.Create(silhouette, -0.3, true);
-        if (extrusion != null)
+        foreach (var sil in silhouettes)
         {
-            var b = extrusion.ToBrep();
-            if (b != null) finalHorizontals.Add(b);
+            // Extrude down by standard floor thickness (0.3m)
+            var extrusion = Extrusion.Create(sil, -0.3, true);
+            if (extrusion != null)
+            {
+                var b = extrusion.ToBrep();
+                if (b != null) finalHorizontals.Add(b);
+            }
         }
     }
     else
@@ -132,15 +135,15 @@ List<Brep> IterativeBooleanUnion(List<Brep> breps)
     for (int i = 1; i < breps.Count; i++)
     {
         var result = Brep.CreateBooleanUnion(new List<Brep> { currentUnion[0], breps[i] }, 0.01);
-        if (result != null && result.Length > 0)
+        if (result != null && result.Length == 1)
         {
-            // Merge coplanar faces to optimize (modifies in-place)
+            // Successfully merged into a single solid
             result[0].MergeCoplanarFaces(RhinoMath.DefaultAngleTolerance);
             currentUnion[0] = result[0];
         }
         else
         {
-            // If union fails, keep it separate (Invariant: No Geometry Left Behind)
+            // If union fails or they are disjoint (result.Length > 1), keep it separate
             currentUnion.Add(breps[i]);
         }
     }
@@ -161,77 +164,51 @@ List<GeometryBase> GetGeometriesFromLayer(RhinoDoc d, string layerPath)
     return list;
 }
 
-Curve GetRaycastFootprint(IEnumerable<GeometryBase> geometries, BoundingBox bbox, double zLevel)
+List<Curve> GetExactFootprint(IEnumerable<GeometryBase> geometries, double zLevel)
 {
-    double resolution = 0.5; // 0.5m grid resolution
-    int xSteps = (int)Math.Ceiling((bbox.Max.X - bbox.Min.X) / resolution) + 2;
-    int ySteps = (int)Math.Ceiling((bbox.Max.Y - bbox.Min.Y) / resolution) + 2;
-    bool[,] grid = new bool[xSteps, ySteps];
+    var projCurves = new List<Curve>();
+    var zPlane = new Plane(new Point3d(0, 0, zLevel), Vector3d.ZAxis);
+    var xform = Transform.PlanarProjection(zPlane);
 
-    double startZ = bbox.Max.Z + 1.0;
-    var searchMeshes = new List<Mesh>();
     foreach (var geo in geometries)
     {
-        if (geo is Mesh m) searchMeshes.Add(m);
-        else if (geo is Brep b) searchMeshes.AddRange(Mesh.CreateFromBrep(b, MeshingParameters.FastRenderMesh) ?? new Mesh[0]);
-        else if (geo is Extrusion e) searchMeshes.AddRange(Mesh.CreateFromBrep(e.ToBrep(), MeshingParameters.FastRenderMesh) ?? new Mesh[0]);
-    }
-    if (searchMeshes.Count == 0) return null;
-
-    var raycastMesh = new Mesh();
-    foreach (var m in searchMeshes) raycastMesh.Append(m);
-
-    for (int i = 0; i < xSteps; i++)
-    {
-        for (int j = 0; j < ySteps; j++)
+        Brep b = null;
+        if (geo is Brep brep) b = brep;
+        else if (geo is Extrusion ext) b = ext.ToBrep();
+        
+        if (b != null)
         {
-            double x = bbox.Min.X + (i * resolution);
-            double y = bbox.Min.Y + (j * resolution);
-            Ray3d ray = new Ray3d(new Point3d(x, y, startZ), Vector3d.ZAxis * -1);
-            double hit = Rhino.Geometry.Intersect.Intersection.MeshRay(raycastMesh, ray);
-            if (hit >= 0.0) grid[i, j] = true;
-        }
-    }
-
-    var cellRects = new List<Curve>();
-    for (int i = 0; i < xSteps; i++)
-    {
-        for (int j = 0; j < ySteps; j++)
-        {
-            if (grid[i, j])
+            foreach (var face in b.Faces)
             {
-                double x = bbox.Min.X + (i * resolution);
-                double y = bbox.Min.Y + (j * resolution);
-                var pts = new Point3d[]
+                // Only take horizontal faces to form the footprint
+                var n = face.NormalAt(face.Domain(0).Mid, face.Domain(1).Mid);
+                if (Math.Abs(n.Z) > 0.8) // Mostly horizontal
                 {
-                    new Point3d(x - resolution/2, y - resolution/2, zLevel),
-                    new Point3d(x + resolution/2, y - resolution/2, zLevel),
-                    new Point3d(x + resolution/2, y + resolution/2, zLevel),
-                    new Point3d(x - resolution/2, y + resolution/2, zLevel),
-                    new Point3d(x - resolution/2, y - resolution/2, zLevel)
-                };
-                cellRects.Add(new PolylineCurve(pts));
+                    var loop = face.OuterLoop.To3dCurve();
+                    if (loop != null)
+                    {
+                        loop.Transform(xform);
+                        projCurves.Add(loop);
+                    }
+                }
             }
         }
     }
 
-    if (cellRects.Count == 0) return null;
-    var unioned = Curve.CreateBooleanUnion(cellRects, 0.001);
+    if (projCurves.Count == 0) return null;
+
+    // Union all projected curves into clean footprints
+    var unioned = Curve.CreateBooleanUnion(projCurves, 0.01);
     if (unioned != null && unioned.Length > 0)
     {
-        double maxArea = -1;
-        Curve bestOutline = null;
+        var validOutlines = new List<Curve>();
         foreach (var crv in unioned)
         {
-            var amp = AreaMassProperties.Compute(crv);
-            if (amp != null && amp.Area > maxArea)
-            {
-                maxArea = amp.Area;
-                bestOutline = crv;
-            }
+            if (crv.IsClosed) validOutlines.Add(crv);
         }
-        return bestOutline;
+        return validOutlines;
     }
+    
     return null;
 }
 
