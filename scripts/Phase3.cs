@@ -102,88 +102,33 @@ var finalHorizontals = new List<Brep>();
 foreach (var cluster in elevationClusters)
 {
     double zLevel = cluster.Max(g => g.GetBoundingBox(true).Max.Z);
-    var levelBreps = new List<Brep>();
-    var projPlane = new Plane(new Point3d(0, 0, zLevel), Vector3d.ZAxis);
-    var xform = Transform.PlanarProjection(projPlane);
     
-    foreach (var geo in cluster)
+    BoundingBox levelBox = BoundingBox.Empty;
+    foreach (var g in cluster) levelBox.Union(g.GetBoundingBox(true));
+    
+    var allFootprints = GetRaycastFootprint(cluster, levelBox, zLevel, doc.ModelAbsoluteTolerance);
+    
+    if (allFootprints != null && allFootprints.Count > 0)
     {
-        Brep br = null;
-        if (geo is Brep b) br = b;
-        else if (geo is Extrusion ext) br = ext.ToBrep();
-        else if (geo is Mesh m) br = Brep.CreateFromMesh(m, true);
-        
-        if (br == null) continue;
-        
-        var outlineCurves = new List<Curve>();
-        
-        // 1. Silhouette extraction
-        var silhouettes = Silhouette.Compute(br, SilhouetteType.Projecting, Vector3d.ZAxis, doc.ModelAbsoluteTolerance, 0.01);
-        if (silhouettes != null && silhouettes.Length > 0)
+        foreach (var fp in allFootprints)
         {
-            foreach (var s in silhouettes)
+            var extrusion = Extrusion.Create(fp, -0.3, true);
+            if (extrusion != null)
             {
-                if (s.Curve != null)
+                var b3d = extrusion.ToBrep();
+                if (b3d != null)
                 {
-                    var c = s.Curve.DuplicateCurve();
-                    c.Transform(xform);
-                    outlineCurves.Add(c);
-                }
-            }
-        }
-        else
-        {
-            // Fallback 1: Naked Edges
-            var naked = br.DuplicateNakedEdgeCurves(true, false);
-            if (naked != null && naked.Length > 0)
-            {
-                foreach (var c in naked)
-                {
-                    var dup = c.DuplicateCurve();
-                    dup.Transform(xform);
-                    outlineCurves.Add(dup);
-                }
-            }
-        }
-        
-        // Fallback 2: Bounding Box
-        if (outlineCurves.Count == 0)
-        {
-            var bbox = geo.GetBoundingBox(true);
-            if (bbox.IsValid)
-            {
-                var rect = new Rectangle3d(projPlane, new Interval(bbox.Min.X, bbox.Max.X), new Interval(bbox.Min.Y, bbox.Max.Y));
-                outlineCurves.Add(rect.ToNurbsCurve());
-            }
-        }
-        
-        if (outlineCurves.Count > 0)
-        {
-            var joined = Curve.JoinCurves(outlineCurves, 0.1);
-            if (joined != null)
-            {
-                foreach (var jCrv in joined)
-                {
-                    if (!jCrv.IsClosed) jCrv.MakeClosed(0.1);
-                    if (jCrv.IsClosed)
-                    {
-                        var extrusion = Extrusion.Create(jCrv, -0.3, true);
-                        if (extrusion != null)
-                        {
-                            var b3d = extrusion.ToBrep();
-                            if (b3d != null) levelBreps.Add(b3d);
-                        }
-                    }
+                    b3d.MergeCoplanarFaces(RhinoMath.DefaultAngleTolerance);
+                    finalHorizontals.Add(b3d);
                 }
             }
         }
     }
-    
-    // 3D Boolean Union the level Breps
-    if (levelBreps.Count > 0)
+    else
     {
-        var unioned = IterativeBooleanUnion(levelBreps);
-        finalHorizontals.AddRange(unioned);
+        // Fallback: Use BoundingBox if totally failed (e.g. empty meshes)
+        var fallbackBrep = Brep.CreateFromBox(levelBox);
+        if (fallbackBrep != null) finalHorizontals.Add(fallbackBrep);
     }
 }
 
@@ -285,4 +230,82 @@ int EnsureLayer(RhinoDoc d, string path, System.Drawing.Color color)
         }
     }
     return parentIndex;
+}
+
+List<Curve> GetRaycastFootprint(IEnumerable<GeometryBase> geometries, BoundingBox bbox, double zLevel, double tolerance)
+{
+    double resolution = 0.50; // Grid resolution
+    int xSteps = (int)Math.Ceiling((bbox.Max.X - bbox.Min.X) / resolution) + 2;
+    int ySteps = (int)Math.Ceiling((bbox.Max.Y - bbox.Min.Y) / resolution) + 2;
+    bool[,] grid = new bool[xSteps, ySteps];
+
+    double startZ = bbox.Max.Z + 1.0;
+    var searchMeshes = new List<Mesh>();
+    foreach (var geo in geometries)
+    {
+        if (geo is Mesh m) searchMeshes.Add(m);
+        else if (geo is Brep b) searchMeshes.AddRange(Mesh.CreateFromBrep(b, MeshingParameters.FastRenderMesh) ?? new Mesh[0]);
+        else if (geo is Extrusion e) searchMeshes.AddRange(Mesh.CreateFromBrep(e.ToBrep(), MeshingParameters.FastRenderMesh) ?? new Mesh[0]);
+    }
+    if (searchMeshes.Count == 0) return new List<Curve>();
+
+    var raycastMesh = new Mesh();
+    foreach (var m in searchMeshes) raycastMesh.Append(m);
+
+    for (int i = 0; i < xSteps; i++)
+    {
+        for (int j = 0; j < ySteps; j++)
+        {
+            double x = bbox.Min.X + (i * resolution);
+            double y = bbox.Min.Y + (j * resolution);
+            Ray3d ray = new Ray3d(new Point3d(x, y, startZ), Vector3d.ZAxis * -1);
+            double hit = Rhino.Geometry.Intersect.Intersection.MeshRay(raycastMesh, ray);
+            if (hit >= 0.0) grid[i, j] = true;
+        }
+    }
+
+    var cellRects = new List<Curve>();
+    for (int i = 0; i < xSteps; i++)
+    {
+        for (int j = 0; j < ySteps; j++)
+        {
+            if (grid[i, j])
+            {
+                double x = bbox.Min.X + (i * resolution);
+                double y = bbox.Min.Y + (j * resolution);
+                var pts = new Point3d[]
+                {
+                    new Point3d(x - resolution/2.0, y - resolution/2.0, zLevel),
+                    new Point3d(x + resolution/2.0, y - resolution/2.0, zLevel),
+                    new Point3d(x + resolution/2.0, y + resolution/2.0, zLevel),
+                    new Point3d(x - resolution/2.0, y + resolution/2.0, zLevel),
+                    new Point3d(x - resolution/2.0, y - resolution/2.0, zLevel)
+                };
+                cellRects.Add(new PolylineCurve(pts));
+            }
+        }
+    }
+
+    if (cellRects.Count == 0) return new List<Curve>();
+
+    var unioned = Curve.CreateBooleanUnion(cellRects, tolerance);
+    if (unioned == null || unioned.Length == 0) return new List<Curve>();
+
+    // RDP Smoothing (Ramer-Douglas-Peucker)
+    var smoothedCurves = new List<Curve>();
+    double rdpTolerance = resolution * 1.5; // Enough to flatten the zig-zags completely
+    foreach (var uCrv in unioned)
+    {
+        if (uCrv.TryGetPolyline(out Polyline pl))
+        {
+            pl.ReduceSegments(rdpTolerance);
+            smoothedCurves.Add(new PolylineCurve(pl));
+        }
+        else
+        {
+            smoothedCurves.Add(uCrv);
+        }
+    }
+
+    return smoothedCurves;
 }
