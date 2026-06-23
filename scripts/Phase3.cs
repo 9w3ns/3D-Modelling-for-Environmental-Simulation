@@ -49,10 +49,10 @@ if (walls.Count > 0)
         var bbox = wallMesh.GetBoundingBox(true);
         double zMin = bbox.Min.Z;
         double zMax = bbox.Max.Z;
-        double sliceInterval = 1.0;
+        double sliceInterval = 2.0;
         
         double zCurr = zMin;
-        double similarityThreshold = 0.60;
+        double similarityThreshold = 0.80;
         double resolution = 0.50;
         
         double globalXMin = bbox.Min.X - resolution * 3;
@@ -103,20 +103,13 @@ if (walls.Count > 0)
         }
 
         var finalBlocks = new List<Brep>();
-        double zOverlap = 0.02; // Vertical overlap to guarantee boolean union of stacked tiers
-
+        
         foreach (var b in blocks)
         {
-            var footprints = GetSolidWallFootprintFromGrid(b.Item1, globalXMin, globalYMin, xStepsTotal, yStepsTotal, resolution, b.Item2 - zOverlap, doc.ModelAbsoluteTolerance);
-            
+            var footprints = GetSolidWallFootprintFromGrid(b.Item1, globalXMin, globalYMin, xStepsTotal, yStepsTotal, resolution, b.Item2, doc.ModelAbsoluteTolerance);
             foreach (var fp in footprints)
             {
-                if (fp.ClosedCurveOrientation(Vector3d.ZAxis) == CurveOrientation.Clockwise)
-                {
-                    fp.Reverse();
-                }
-                
-                var extrusion = Extrusion.Create(fp, (b.Item3 - b.Item2) + (zOverlap * 2.0), true);
+                var extrusion = Extrusion.Create(fp, b.Item3 - b.Item2, true);
                 if (extrusion != null)
                 {
                     var b3d = extrusion.ToBrep();
@@ -228,47 +221,19 @@ List<Brep> IterativeBooleanUnion(List<Brep> breps)
     
     for (int i = 1; i < breps.Count; i++)
     {
-        bool merged = false;
-        for (int j = 0; j < currentUnion.Count; j++)
+        var result = Brep.CreateBooleanUnion(new List<Brep> { currentUnion[0], breps[i] }, 0.01);
+        if (result != null && result.Length == 1)
         {
-            var result = Brep.CreateBooleanUnion(new List<Brep> { currentUnion[j], breps[i] }, 0.01);
-            if (result != null && result.Length == 1)
-            {
-                result[0].MergeCoplanarFaces(RhinoMath.DefaultAngleTolerance);
-                currentUnion[j] = result[0];
-                merged = true;
-                break;
-            }
+            // Successfully merged into a single solid
+            result[0].MergeCoplanarFaces(RhinoMath.DefaultAngleTolerance);
+            currentUnion[0] = result[0];
         }
-        
-        if (!merged)
+        else
         {
+            // If union fails or they are disjoint (result.Length > 1), keep it separate
             currentUnion.Add(breps[i]);
         }
     }
-    
-    // Final pass to merge any pieces that might have grown into each other
-    bool changesMade = true;
-    while (changesMade && currentUnion.Count > 1)
-    {
-        changesMade = false;
-        for (int i = 0; i < currentUnion.Count && !changesMade; i++)
-        {
-            for (int j = i + 1; j < currentUnion.Count; j++)
-            {
-                var result = Brep.CreateBooleanUnion(new List<Brep> { currentUnion[i], currentUnion[j] }, 0.01);
-                if (result != null && result.Length == 1)
-                {
-                    result[0].MergeCoplanarFaces(RhinoMath.DefaultAngleTolerance);
-                    currentUnion[i] = result[0];
-                    currentUnion.RemoveAt(j);
-                    changesMade = true;
-                    break;
-                }
-            }
-        }
-    }
-    
     return currentUnion;
 }
 
