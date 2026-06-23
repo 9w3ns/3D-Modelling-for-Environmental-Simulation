@@ -101,18 +101,24 @@ var finalHorizontals = new List<Brep>();
 
 foreach (var cluster in elevationClusters)
 {
-    double zLevel = cluster.Max(g => g.GetBoundingBox(true).Max.Z);
+    double baseZ = cluster.Min(g => g.GetBoundingBox(true).Min.Z);
+    double maxThickness = cluster.Max(g => {
+        var box = g.GetBoundingBox(true);
+        return box.Max.Z - box.Min.Z;
+    });
+    
+    if (maxThickness < 0.10) maxThickness = 0.30; // Fallback for perfectly planar meshes
     
     BoundingBox levelBox = BoundingBox.Empty;
     foreach (var g in cluster) levelBox.Union(g.GetBoundingBox(true));
     
-    var allFootprints = GetRaycastFootprint(cluster, levelBox, zLevel, doc.ModelAbsoluteTolerance);
+    var allFootprints = GetRaycastFootprint(cluster, levelBox, baseZ, doc.ModelAbsoluteTolerance);
     
     if (allFootprints != null && allFootprints.Count > 0)
     {
         foreach (var fp in allFootprints)
         {
-            var extrusion = Extrusion.Create(fp, -0.3, true);
+            var extrusion = Extrusion.Create(fp, maxThickness, true); // +Z extrusion
             if (extrusion != null)
             {
                 var b3d = extrusion.ToBrep();
