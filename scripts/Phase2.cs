@@ -80,6 +80,16 @@ SemanticRole CategorizeGeometry(RhinoObject rhObj)
     if (origLayer.IndexOf("Context", StringComparison.OrdinalIgnoreCase) >= 0)
         return SemanticRole.Context;
 
+    if (origLayer.IndexOf("Roof", StringComparison.OrdinalIgnoreCase) >= 0)
+        return SemanticRole.Roof;
+
+    if (origLayer.IndexOf("Floor", StringComparison.OrdinalIgnoreCase) >= 0 ||
+        origLayer.IndexOf("Slab", StringComparison.OrdinalIgnoreCase) >= 0)
+        return SemanticRole.Floor;
+
+    if (origLayer.IndexOf("Wall", StringComparison.OrdinalIgnoreCase) >= 0)
+        return SemanticRole.Wall;
+
     if (origLayer.IndexOf("Glass", StringComparison.OrdinalIgnoreCase) >= 0 || 
         origLayer.IndexOf("Glazing", StringComparison.OrdinalIgnoreCase) >= 0 ||
         origMat.IndexOf("Glass", StringComparison.OrdinalIgnoreCase) >= 0 || 

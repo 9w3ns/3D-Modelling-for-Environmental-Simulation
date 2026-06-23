@@ -68,25 +68,41 @@ var horizontalGeos = new List<GeometryBase>();
 horizontalGeos.AddRange(floors);
 horizontalGeos.AddRange(roofs);
 
-// Group by Z elevation (rounded to 0.01m)
-var elevationGroups = new Dictionary<double, List<GeometryBase>>();
-foreach (var geo in horizontalGeos)
+// Group by Z elevation (Agglomerative Clustering, 0.50m tolerance)
+var sortedGeos = horizontalGeos.OrderBy(g => g.GetBoundingBox(true).Max.Z).ToList();
+var elevationClusters = new List<List<GeometryBase>>();
+
+if (sortedGeos.Count > 0)
 {
-    var bbox = geo.GetBoundingBox(true);
-    double zLevel = Math.Round(bbox.Max.Z, 2);
-    
-    if (!elevationGroups.ContainsKey(zLevel))
-        elevationGroups[zLevel] = new List<GeometryBase>();
+    var currentCluster = new List<GeometryBase> { sortedGeos[0] };
+    elevationClusters.Add(currentCluster);
+
+    for (int i = 1; i < sortedGeos.Count; i++)
+    {
+        var geo = sortedGeos[i];
+        double currentZ = geo.GetBoundingBox(true).Max.Z;
         
-    elevationGroups[zLevel].Add(geo);
+        // Find the absolute max Z of the current cluster so far
+        double clusterMaxZ = currentCluster.Max(g => g.GetBoundingBox(true).Max.Z);
+        
+        if (currentZ - clusterMaxZ <= 0.50)
+        {
+            currentCluster.Add(geo);
+        }
+        else
+        {
+            currentCluster = new List<GeometryBase> { geo };
+            elevationClusters.Add(currentCluster);
+        }
+    }
 }
 
 var finalHorizontals = new List<Brep>();
 
-foreach (var kvp in elevationGroups.OrderBy(k => k.Key))
+foreach (var cluster in elevationClusters)
 {
-    double zLevel = kvp.Key;
-    var geosAtLevel = kvp.Value;
+    double zLevel = cluster.Max(g => g.GetBoundingBox(true).Max.Z);
+    var geosAtLevel = cluster;
     
     BoundingBox levelBox = BoundingBox.Empty;
     foreach (var g in geosAtLevel) levelBox.Union(g.GetBoundingBox(true));
