@@ -60,7 +60,7 @@ var finalWalls = IterativeBooleanUnion(reconstructedWalls);
 BakeGeometry(doc, finalWalls, outputRoot + "::Walls", System.Drawing.Color.Orange);
 
 // ==============================================================================
-// FLOOR & ROOF RECONSTRUCTION (Grouping & Silhouette Union)
+// FLOOR & ROOF RECONSTRUCTION (Clustering + Silhouette Union)
 // ==============================================================================
 RhinoApp.WriteLine($"Reconstructing {floors.Count} Floors and {roofs.Count} Roofs using Silhouette-Union...");
 
@@ -68,7 +68,7 @@ var horizontalGeos = new List<GeometryBase>();
 horizontalGeos.AddRange(floors);
 horizontalGeos.AddRange(roofs);
 
-// Group by Z elevation (Agglomerative Clustering, 0.50m tolerance)
+// Group by Z elevation (Agglomerative Clustering, 1.50m gap tolerance)
 var sortedGeos = horizontalGeos.OrderBy(g => g.GetBoundingBox(true).Max.Z).ToList();
 var elevationClusters = new List<List<GeometryBase>>();
 
@@ -82,10 +82,10 @@ if (sortedGeos.Count > 0)
         var geo = sortedGeos[i];
         double currentZ = geo.GetBoundingBox(true).Max.Z;
         
-        // Find the absolute max Z of the current cluster so far
-        double clusterMaxZ = currentCluster.Max(g => g.GetBoundingBox(true).Max.Z);
+        // Gap to the previous highest element in the current cluster
+        double clusterMaxZ = currentCluster[currentCluster.Count - 1].GetBoundingBox(true).Max.Z;
         
-        if (currentZ - clusterMaxZ <= 0.50)
+        if (currentZ - clusterMaxZ <= 1.50)
         {
             currentCluster.Add(geo);
         }
@@ -102,37 +102,92 @@ var finalHorizontals = new List<Brep>();
 foreach (var cluster in elevationClusters)
 {
     double zLevel = cluster.Max(g => g.GetBoundingBox(true).Max.Z);
-    var geosAtLevel = cluster;
+    var levelBreps = new List<Brep>();
+    var projPlane = new Plane(new Point3d(0, 0, zLevel), Vector3d.ZAxis);
+    var xform = Transform.PlanarProjection(projPlane);
     
-    BoundingBox levelBox = BoundingBox.Empty;
-    foreach (var g in geosAtLevel) levelBox.Union(g.GetBoundingBox(true));
-    
-    // Silhouette Extraction (Mathematical Projection)
-    var silhouettes = GetExactFootprint(geosAtLevel, zLevel);
-    if (silhouettes != null && silhouettes.Count > 0)
+    foreach (var geo in cluster)
     {
-        foreach (var sil in silhouettes)
+        Brep br = null;
+        if (geo is Brep b) br = b;
+        else if (geo is Extrusion ext) br = ext.ToBrep();
+        else if (geo is Mesh m) br = Brep.CreateFromMesh(m, true);
+        
+        if (br == null) continue;
+        
+        var outlineCurves = new List<Curve>();
+        
+        // 1. Silhouette extraction
+        var silhouettes = Silhouette.Compute(br, SilhouetteType.Projecting, Vector3d.ZAxis, doc.ModelAbsoluteTolerance, 0.01);
+        if (silhouettes != null && silhouettes.Length > 0)
         {
-            // Extrude down by standard floor thickness (0.3m)
-            var extrusion = Extrusion.Create(sil, -0.3, true);
-            if (extrusion != null)
+            foreach (var s in silhouettes)
             {
-                var b = extrusion.ToBrep();
-                if (b != null) finalHorizontals.Add(b);
+                if (s.Curve != null)
+                {
+                    var c = s.Curve.DuplicateCurve();
+                    c.Transform(xform);
+                    outlineCurves.Add(c);
+                }
+            }
+        }
+        else
+        {
+            // Fallback 1: Naked Edges
+            var naked = br.DuplicateNakedEdgeCurves(true, false);
+            if (naked != null && naked.Length > 0)
+            {
+                foreach (var c in naked)
+                {
+                    var dup = c.DuplicateCurve();
+                    dup.Transform(xform);
+                    outlineCurves.Add(dup);
+                }
+            }
+        }
+        
+        // Fallback 2: Bounding Box
+        if (outlineCurves.Count == 0)
+        {
+            var bbox = geo.GetBoundingBox(true);
+            if (bbox.IsValid)
+            {
+                var rect = new Rectangle3d(projPlane, new Interval(bbox.Min.X, bbox.Max.X), new Interval(bbox.Min.Y, bbox.Max.Y));
+                outlineCurves.Add(rect.ToNurbsCurve());
+            }
+        }
+        
+        if (outlineCurves.Count > 0)
+        {
+            var joined = Curve.JoinCurves(outlineCurves, 0.1);
+            if (joined != null)
+            {
+                foreach (var jCrv in joined)
+                {
+                    if (!jCrv.IsClosed) jCrv.MakeClosed(0.1);
+                    if (jCrv.IsClosed)
+                    {
+                        var extrusion = Extrusion.Create(jCrv, -0.3, true);
+                        if (extrusion != null)
+                        {
+                            var b3d = extrusion.ToBrep();
+                            if (b3d != null) levelBreps.Add(b3d);
+                        }
+                    }
+                }
             }
         }
     }
-    else
+    
+    // 3D Boolean Union the level Breps
+    if (levelBreps.Count > 0)
     {
-        // Fallback: Use BoundingBox
-        var fallbackBrep = Brep.CreateFromBox(levelBox);
-        if (fallbackBrep != null) finalHorizontals.Add(fallbackBrep);
+        var unioned = IterativeBooleanUnion(levelBreps);
+        finalHorizontals.AddRange(unioned);
     }
 }
 
-// Iterative Boolean Union for Floors
-var finalSlabs = IterativeBooleanUnion(finalHorizontals);
-BakeGeometry(doc, finalSlabs, outputRoot + "::Floors", System.Drawing.Color.DarkGray);
+BakeGeometry(doc, finalHorizontals, outputRoot + "::Floors", System.Drawing.Color.DarkGray);
 
 doc.Views.Redraw();
 RhinoApp.WriteLine("Phase 3 complete! Geometry has been reconstructed into watertight solids.");
@@ -180,53 +235,7 @@ List<GeometryBase> GetGeometriesFromLayer(RhinoDoc d, string layerPath)
     return list;
 }
 
-List<Curve> GetExactFootprint(IEnumerable<GeometryBase> geometries, double zLevel)
-{
-    var projCurves = new List<Curve>();
-    var zPlane = new Plane(new Point3d(0, 0, zLevel), Vector3d.ZAxis);
-    var xform = Transform.PlanarProjection(zPlane);
 
-    foreach (var geo in geometries)
-    {
-        Brep b = null;
-        if (geo is Brep brep) b = brep;
-        else if (geo is Extrusion ext) b = ext.ToBrep();
-        
-        if (b != null)
-        {
-            foreach (var face in b.Faces)
-            {
-                // Only take horizontal faces to form the footprint
-                var n = face.NormalAt(face.Domain(0).Mid, face.Domain(1).Mid);
-                if (Math.Abs(n.Z) > 0.8) // Mostly horizontal
-                {
-                    var loop = face.OuterLoop.To3dCurve();
-                    if (loop != null)
-                    {
-                        loop.Transform(xform);
-                        projCurves.Add(loop);
-                    }
-                }
-            }
-        }
-    }
-
-    if (projCurves.Count == 0) return null;
-
-    // Union all projected curves into clean footprints
-    var unioned = Curve.CreateBooleanUnion(projCurves, 0.01);
-    if (unioned != null && unioned.Length > 0)
-    {
-        var validOutlines = new List<Curve>();
-        foreach (var crv in unioned)
-        {
-            if (crv.IsClosed) validOutlines.Add(crv);
-        }
-        return validOutlines;
-    }
-    
-    return null;
-}
 
 void BakeGeometry(RhinoDoc d, List<Brep> breps, string layerPath, System.Drawing.Color color)
 {
