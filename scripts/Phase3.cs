@@ -49,7 +49,7 @@ if (walls.Count > 0)
         var bbox = wallMesh.GetBoundingBox(true);
         double zMin = bbox.Min.Z;
         double zMax = bbox.Max.Z;
-        double sliceInterval = 2.0;
+        double sliceInterval = 1.0;
         
         double zCurr = zMin;
         double similarityThreshold = 0.60;
@@ -103,13 +103,20 @@ if (walls.Count > 0)
         }
 
         var finalBlocks = new List<Brep>();
-        
+        double zOverlap = 0.02; // Vertical overlap to guarantee boolean union of stacked tiers
+
         foreach (var b in blocks)
         {
-            var footprints = GetSolidWallFootprintFromGrid(b.Item1, globalXMin, globalYMin, xStepsTotal, yStepsTotal, resolution, b.Item2, doc.ModelAbsoluteTolerance);
+            var footprints = GetSolidWallFootprintFromGrid(b.Item1, globalXMin, globalYMin, xStepsTotal, yStepsTotal, resolution, b.Item2 - zOverlap, doc.ModelAbsoluteTolerance);
+            
             foreach (var fp in footprints)
             {
-                var extrusion = Extrusion.Create(fp, b.Item3 - b.Item2, true);
+                if (fp.ClosedCurveOrientation(Vector3d.ZAxis) == CurveOrientation.Clockwise)
+                {
+                    fp.Reverse();
+                }
+                
+                var extrusion = Extrusion.Create(fp, (b.Item3 - b.Item2) + (zOverlap * 2.0), true);
                 if (extrusion != null)
                 {
                     var b3d = extrusion.ToBrep();
@@ -221,19 +228,47 @@ List<Brep> IterativeBooleanUnion(List<Brep> breps)
     
     for (int i = 1; i < breps.Count; i++)
     {
-        var result = Brep.CreateBooleanUnion(new List<Brep> { currentUnion[0], breps[i] }, 0.01);
-        if (result != null && result.Length == 1)
+        bool merged = false;
+        for (int j = 0; j < currentUnion.Count; j++)
         {
-            // Successfully merged into a single solid
-            result[0].MergeCoplanarFaces(RhinoMath.DefaultAngleTolerance);
-            currentUnion[0] = result[0];
+            var result = Brep.CreateBooleanUnion(new List<Brep> { currentUnion[j], breps[i] }, 0.01);
+            if (result != null && result.Length == 1)
+            {
+                result[0].MergeCoplanarFaces(RhinoMath.DefaultAngleTolerance);
+                currentUnion[j] = result[0];
+                merged = true;
+                break;
+            }
         }
-        else
+        
+        if (!merged)
         {
-            // If union fails or they are disjoint (result.Length > 1), keep it separate
             currentUnion.Add(breps[i]);
         }
     }
+    
+    // Final pass to merge any pieces that might have grown into each other
+    bool changesMade = true;
+    while (changesMade && currentUnion.Count > 1)
+    {
+        changesMade = false;
+        for (int i = 0; i < currentUnion.Count && !changesMade; i++)
+        {
+            for (int j = i + 1; j < currentUnion.Count; j++)
+            {
+                var result = Brep.CreateBooleanUnion(new List<Brep> { currentUnion[i], currentUnion[j] }, 0.01);
+                if (result != null && result.Length == 1)
+                {
+                    result[0].MergeCoplanarFaces(RhinoMath.DefaultAngleTolerance);
+                    currentUnion[i] = result[0];
+                    currentUnion.RemoveAt(j);
+                    changesMade = true;
+                    break;
+                }
+            }
+        }
+    }
+    
     return currentUnion;
 }
 
@@ -344,13 +379,14 @@ List<Curve> GetRaycastFootprint(IEnumerable<GeometryBase> geometries, BoundingBo
             {
                 double x = bbox.Min.X + (i * resolution);
                 double y = bbox.Min.Y + (j * resolution);
+                double o = 0.05;
                 var pts = new Point3d[]
                 {
-                    new Point3d(x - resolution/2.0, y - resolution/2.0, zLevel),
-                    new Point3d(x + resolution/2.0, y - resolution/2.0, zLevel),
-                    new Point3d(x + resolution/2.0, y + resolution/2.0, zLevel),
-                    new Point3d(x - resolution/2.0, y + resolution/2.0, zLevel),
-                    new Point3d(x - resolution/2.0, y - resolution/2.0, zLevel)
+                    new Point3d(x - resolution/2.0 - o, y - resolution/2.0 - o, zLevel),
+                    new Point3d(x + resolution/2.0 + o, y - resolution/2.0 - o, zLevel),
+                    new Point3d(x + resolution/2.0 + o, y + resolution/2.0 + o, zLevel),
+                    new Point3d(x - resolution/2.0 - o, y + resolution/2.0 + o, zLevel),
+                    new Point3d(x - resolution/2.0 - o, y - resolution/2.0 - o, zLevel)
                 };
                 cellRects.Add(new PolylineCurve(pts));
             }
@@ -519,13 +555,14 @@ List<Curve> GetSolidWallFootprintFromGrid(int[,] grid, double xMin, double yMin,
             {
                 double x = xMin + (i * resolution);
                 double y = yMin + (j * resolution);
+                double o = 0.05;
                 var pts = new Point3d[]
                 {
-                    new Point3d(x, y, zLevel),
-                    new Point3d(x + resolution, y, zLevel),
-                    new Point3d(x + resolution, y + resolution, zLevel),
-                    new Point3d(x, y + resolution, zLevel),
-                    new Point3d(x, y, zLevel)
+                    new Point3d(x - o, y - o, zLevel),
+                    new Point3d(x + resolution + o, y - o, zLevel),
+                    new Point3d(x + resolution + o, y + resolution + o, zLevel),
+                    new Point3d(x - o, y + resolution + o, zLevel),
+                    new Point3d(x - o, y - o, zLevel)
                 };
                 cellRects.Add(new PolylineCurve(pts));
             }
