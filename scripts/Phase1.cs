@@ -45,6 +45,13 @@ foreach (var cluster in sourceClusters)
         double dy = bbox.Max.Y - bbox.Min.Y;
         double dz = bbox.Max.Z - bbox.Min.Z;
         
+        // NEW FILTER: Drop thin horizontal elements (dz < 0.10m)
+        if (dz < 0.10)
+        {
+            droppedCount++;
+            continue;
+        }
+        
         // Use Bounding Box surface area as a fast pre-filter. 
         // Bounding Box Area is always >= True Area.
         double bboxArea = 2.0 * ((dx * dy) + (dy * dz) + (dx * dz));

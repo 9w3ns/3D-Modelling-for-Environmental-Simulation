@@ -163,6 +163,13 @@ SemanticRole CategorizeGeometry(RhinoObject rhObj)
         role = SemanticRole.Wall;
     }
 
+    // OVERRIDE FOR THIN SHADINGS
+    // A floor or roof must be at least 0.10m thick. If not, it is a shading element.
+    if ((role == SemanticRole.Floor || role == SemanticRole.Roof) && dz < 0.10)
+    {
+        role = SemanticRole.Shading;
+    }
+
     return role;
 }
 

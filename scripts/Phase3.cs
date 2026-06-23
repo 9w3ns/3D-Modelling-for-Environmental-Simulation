@@ -85,7 +85,7 @@ if (sortedGeos.Count > 0)
         // Gap to the previous highest element in the current cluster
         double clusterMaxZ = currentCluster[currentCluster.Count - 1].GetBoundingBox(true).Max.Z;
         
-        if (currentZ - clusterMaxZ <= 1.50)
+        if (currentZ - clusterMaxZ <= 0.50)
         {
             currentCluster.Add(geo);
         }
