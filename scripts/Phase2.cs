@@ -107,44 +107,63 @@ SemanticRole CategorizeGeometry(RhinoObject rhObj)
 
     SemanticRole role = SemanticRole.Unknown;
 
-    if (geo is Brep brep && brep.Faces.Count > 0)
+    double totalWallArea = 0;
+    double totalRoofArea = 0;
+    double totalFloorArea = 0;
+
+    Brep b = null;
+    if (geo is Brep brep) b = brep;
+    else if (geo is Extrusion ext) b = ext.ToBrep();
+
+    if (b != null && b.Faces.Count > 0)
     {
-        BrepFace largestFace = null;
-        double maxArea = -1;
-        foreach (var face in brep.Faces)
+        foreach (var face in b.Faces)
         {
             var amp = AreaMassProperties.Compute(face);
-            if (amp != null && amp.Area > maxArea)
+            double area = amp != null ? amp.Area : 0.0;
+            if (area > 0)
             {
-                maxArea = amp.Area;
-                largestFace = face;
+                var faceRole = ClassifySurface(face);
+                if (faceRole == SemanticRole.Wall) totalWallArea += area;
+                else if (faceRole == SemanticRole.Roof) totalRoofArea += area;
+                else if (faceRole == SemanticRole.Floor) totalFloorArea += area;
             }
-        }
-        if (largestFace != null)
-        {
-            role = ClassifySurface(largestFace);
         }
     }
-    else if (geo is Extrusion ext)
+    else if (geo is Mesh mesh && mesh.Faces.Count > 0)
     {
-        var b = ext.ToBrep();
-        if (b != null && b.Faces.Count > 0)
+        mesh.FaceNormals.ComputeFaceNormals();
+        for (int i = 0; i < mesh.Faces.Count; i++)
         {
-            BrepFace largestFace = null;
-            double maxArea = -1;
-            foreach (var face in b.Faces)
+            var normal = mesh.FaceNormals[i];
+            double area = 0.0;
+            Point3d pA = mesh.Vertices[mesh.Faces[i].A];
+            Point3d pB = mesh.Vertices[mesh.Faces[i].B];
+            Point3d pC = mesh.Vertices[mesh.Faces[i].C];
+            area = Vector3d.CrossProduct(pB - pA, pC - pA).Length / 2.0;
+            if (mesh.Faces[i].IsQuad)
             {
-                var amp = AreaMassProperties.Compute(face);
-                if (amp != null && amp.Area > maxArea)
-                {
-                    maxArea = amp.Area;
-                    largestFace = face;
-                }
+                Point3d pD = mesh.Vertices[mesh.Faces[i].D];
+                area += Vector3d.CrossProduct(pC - pA, pD - pA).Length / 2.0;
             }
-            if (largestFace != null)
-            {
-                role = ClassifySurface(largestFace);
-            }
+
+            double angleToUp = Vector3d.VectorAngle(normal, Vector3d.ZAxis);
+            if (angleToUp <= Math.PI / 9) totalRoofArea += area;
+            else if (angleToUp >= 8 * Math.PI / 9) totalFloorArea += area;
+            else totalWallArea += area; // Default tilted surfaces to wall
+        }
+    }
+
+    if (totalWallArea > 0 || totalRoofArea > 0 || totalFloorArea > 0)
+    {
+        double totalHorizontalArea = totalRoofArea + totalFloorArea;
+        if (totalWallArea > totalHorizontalArea)
+        {
+            role = SemanticRole.Wall;
+        }
+        else
+        {
+            role = totalRoofArea > totalFloorArea ? SemanticRole.Roof : SemanticRole.Floor;
         }
     }
 
@@ -168,6 +187,21 @@ SemanticRole CategorizeGeometry(RhinoObject rhObj)
     if ((role == SemanticRole.Floor || role == SemanticRole.Roof) && dz < 0.10)
     {
         role = SemanticRole.Shading;
+    }
+
+    // OVERRIDE FOR COLUMNS AND SHORT WALLS -> SHADINGS
+    if (role == SemanticRole.Wall)
+    {
+        // 1. Columns: If it doesn't span more than 1.2m in any horizontal direction
+        if (Math.Max(dx, dy) <= 1.20)
+        {
+            role = SemanticRole.Shading;
+        }
+        // 2. Parapets/Curbs: If it is shorter than 1.0m tall
+        else if (dz < 1.0)
+        {
+            role = SemanticRole.Shading;
+        }
     }
 
     return role;

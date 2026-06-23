@@ -26,37 +26,102 @@ var floors = GetGeometriesFromLayer(doc, inputRoot + "::Floors");
 var roofs = GetGeometriesFromLayer(doc, inputRoot + "::Roofs");
 
 // ==============================================================================
-// WALL RECONSTRUCTION (OBB-Union Invariant)
+// WALL RECONSTRUCTION (Solid Mass Contour Slicing)
 // ==============================================================================
-RhinoApp.WriteLine($"Reconstructing {walls.Count} Walls using OBB-Union...");
-var reconstructedWalls = new List<Brep>();
+RhinoApp.WriteLine($"Reconstructing {walls.Count} Walls using Solid Mass Contour Slicing...");
+var finalWalls = new List<Brep>();
 
-foreach (var geo in walls)
+if (walls.Count > 0)
 {
-    var bbox = geo.GetBoundingBox(true);
-    if (!bbox.IsValid) continue;
+    var searchMeshes = new List<Mesh>();
+    foreach (var geo in walls)
+    {
+        if (geo is Mesh m) searchMeshes.Add(m);
+        else if (geo is Brep b) searchMeshes.AddRange(Mesh.CreateFromBrep(b, MeshingParameters.FastRenderMesh) ?? new Mesh[0]);
+        else if (geo is Extrusion e) searchMeshes.AddRange(Mesh.CreateFromBrep(e.ToBrep(), MeshingParameters.FastRenderMesh) ?? new Mesh[0]);
+    }
 
-    // Create Oriented Bounding Box (OBB). Since we assume Z is up, we can use the World XY plane.
-    // Box.CreateFromBrep provides the tightest OBB. If it fails, fallback to world bounding box.
-    Box obb;
-    if (geo is Brep brep)
+    var wallMesh = new Mesh();
+    foreach (var m in searchMeshes) wallMesh.Append(m);
+
+    if (wallMesh.IsValid)
     {
-        obb = Box.Unset;
-        // Get tight bounding box
-        var tightBox = brep.GetBoundingBox(true);
-        obb = new Box(tightBox);
+        var bbox = wallMesh.GetBoundingBox(true);
+        double zMin = bbox.Min.Z;
+        double zMax = bbox.Max.Z;
+        double sliceInterval = 2.0;
+        
+        double zCurr = zMin;
+        double similarityThreshold = 0.60;
+        double resolution = 0.50;
+        
+        double globalXMin = bbox.Min.X - resolution * 3;
+        double globalXMax = bbox.Max.X + resolution * 3;
+        double globalYMin = bbox.Min.Y - resolution * 3;
+        double globalYMax = bbox.Max.Y + resolution * 3;
+        
+        int xStepsTotal = (int)Math.Ceiling((globalXMax - globalXMin) / resolution) + 1;
+        int yStepsTotal = (int)Math.Ceiling((globalYMax - globalYMin) / resolution) + 1;
+        
+        var blocks = new List<Tuple<int[,], double, double>>();
+
+        while (zCurr < zMax)
+        {
+            double zTop = Math.Min(zCurr + sliceInterval, zMax);
+            
+            // Slice the mesh twice per meter to ensure we catch everything
+            var intersectCurves = new List<PolylineCurve>();
+            double[] sliceHeights = new double[] { zCurr + 0.1, zTop - 0.1 };
+            
+            foreach (double hz in sliceHeights)
+            {
+                if (hz >= zMax) continue;
+                var plane = new Plane(new Point3d(0, 0, hz), Vector3d.ZAxis);
+                var crvArr = Rhino.Geometry.Intersect.Intersection.MeshPlane(wallMesh, plane);
+                if (crvArr != null)
+                {
+                    foreach (var c in crvArr) intersectCurves.Add(c.ToPolylineCurve());
+                }
+            }
+            
+            if (intersectCurves.Count > 0)
+            {
+                var grid = GenerateErodedGrid(intersectCurves, globalXMin, globalYMin, xStepsTotal, yStepsTotal, resolution);
+                
+                if (blocks.Count > 0 && GridsAreSimilar(blocks[blocks.Count - 1].Item1, grid, xStepsTotal, yStepsTotal, similarityThreshold))
+                {
+                    var last = blocks[blocks.Count - 1];
+                    UnionGrids(last.Item1, grid, xStepsTotal, yStepsTotal);
+                    blocks[blocks.Count - 1] = new Tuple<int[,], double, double>(last.Item1, last.Item2, zTop);
+                }
+                else
+                {
+                    blocks.Add(new Tuple<int[,], double, double>(grid, zCurr, zTop));
+                }
+            }
+            zCurr += sliceInterval;
+        }
+
+        var finalBlocks = new List<Brep>();
+        
+        foreach (var b in blocks)
+        {
+            var footprints = GetSolidWallFootprintFromGrid(b.Item1, globalXMin, globalYMin, xStepsTotal, yStepsTotal, resolution, b.Item2, doc.ModelAbsoluteTolerance);
+            foreach (var fp in footprints)
+            {
+                var extrusion = Extrusion.Create(fp, b.Item3 - b.Item2, true);
+                if (extrusion != null)
+                {
+                    var b3d = extrusion.ToBrep();
+                    if (b3d != null) finalBlocks.Add(b3d);
+                }
+            }
+        }
+
+        finalWalls = IterativeBooleanUnion(finalBlocks);
     }
-    else
-    {
-        obb = new Box(bbox);
-    }
-    
-    var obbBrep = obb.ToBrep();
-    if (obbBrep != null) reconstructedWalls.Add(obbBrep);
 }
 
-// Iterative Boolean Union for Walls
-var finalWalls = IterativeBooleanUnion(reconstructedWalls);
 BakeGeometry(doc, finalWalls, outputRoot + "::Walls", System.Drawing.Color.Orange);
 
 // ==============================================================================
@@ -310,6 +375,181 @@ List<Curve> GetRaycastFootprint(IEnumerable<GeometryBase> geometries, BoundingBo
         else
         {
             smoothedCurves.Add(uCrv);
+        }
+    }
+
+    return smoothedCurves;
+}
+
+int[,] GenerateErodedGrid(List<PolylineCurve> polylines, double xMin, double yMin, int xSteps, int ySteps, double resolution)
+{
+    int[,] grid = new int[xSteps, ySteps];
+
+    foreach (var pl in polylines)
+    {
+        if (pl.TryGetPolyline(out Polyline poly))
+        {
+            int segmentCount = poly.SegmentCount;
+            for (int k = 0; k < segmentCount; k++)
+            {
+                var line = poly.SegmentAt(k);
+                int samples = (int)(line.Length / (resolution / 4.0)) + 1;
+                for (int s = 0; s <= samples; s++)
+                {
+                    double t = samples > 0 ? (double)s / samples : 0.0;
+                    var pt = line.PointAt(t);
+                    int gx = (int)((pt.X - xMin) / resolution);
+                    int gy = (int)((pt.Y - yMin) / resolution);
+                    if (gx >= 0 && gx < xSteps && gy >= 0 && gy < ySteps)
+                    {
+                        grid[gx, gy] = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    int[,] gridDilated = new int[xSteps, ySteps];
+    for (int i = 0; i < xSteps; i++)
+        for (int j = 0; j < ySteps; j++)
+            gridDilated[i, j] = grid[i, j];
+
+    int[] dx = { 0, 0, 1, -1, 1, -1, 1, -1 };
+    int[] dy = { 1, -1, 0, 0, 1, -1, -1, 1 };
+
+    for (int i = 1; i < xSteps - 1; i++)
+    {
+        for (int j = 1; j < ySteps - 1; j++)
+        {
+            if (grid[i, j] == 1)
+            {
+                for (int d = 0; d < 8; d++)
+                {
+                    gridDilated[i + dx[d], j + dy[d]] = 1;
+                }
+            }
+        }
+    }
+
+    Queue<Tuple<int, int>> q = new Queue<Tuple<int, int>>();
+    q.Enqueue(new Tuple<int, int>(0, 0));
+    gridDilated[0, 0] = 2;
+
+    while (q.Count > 0)
+    {
+        var curr = q.Dequeue();
+        int cx = curr.Item1;
+        int cy = curr.Item2;
+
+        for (int d = 0; d < 8; d++)
+        {
+            int nx = cx + dx[d];
+            int ny = cy + dy[d];
+            if (nx >= 0 && nx < xSteps && ny >= 0 && ny < ySteps)
+            {
+                if (gridDilated[nx, ny] == 0)
+                {
+                    gridDilated[nx, ny] = 2;
+                    q.Enqueue(new Tuple<int, int>(nx, ny));
+                }
+            }
+        }
+    }
+
+    int[,] gridEroded = new int[xSteps, ySteps];
+    for (int i = 0; i < xSteps; i++)
+        for (int j = 0; j < ySteps; j++)
+            gridEroded[i, j] = gridDilated[i, j];
+
+    for (int i = 1; i < xSteps - 1; i++)
+    {
+        for (int j = 1; j < ySteps - 1; j++)
+        {
+            if (gridDilated[i, j] != 2)
+            {
+                for (int d = 0; d < 8; d++)
+                {
+                    if (gridDilated[i + dx[d], j + dy[d]] == 2)
+                    {
+                        gridEroded[i, j] = 2;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return gridEroded;
+}
+
+bool GridsAreSimilar(int[,] g1, int[,] g2, int xs, int ys, double thresh)
+{
+    int match = 0, total1 = 0, total2 = 0;
+    for (int i = 0; i < xs; i++)
+    {
+        for (int j = 0; j < ys; j++)
+        {
+            bool s1 = (g1[i, j] != 2);
+            bool s2 = (g2[i, j] != 2);
+            if (s1) total1++;
+            if (s2) total2++;
+            if (s1 && s2) match++;
+        }
+    }
+    int m = Math.Max(total1, total2);
+    if (m == 0) return true;
+    return ((double)match / m) >= thresh;
+}
+
+void UnionGrids(int[,] dest, int[,] src, int xs, int ys)
+{
+    for (int i = 0; i < xs; i++)
+        for (int j = 0; j < ys; j++)
+            if (src[i, j] != 2) dest[i, j] = 1;
+}
+
+List<Curve> GetSolidWallFootprintFromGrid(int[,] grid, double xMin, double yMin, int xSteps, int ySteps, double resolution, double zLevel, double tolerance)
+{
+    var cellRects = new List<Curve>();
+    for (int i = 0; i < xSteps; i++)
+    {
+        for (int j = 0; j < ySteps; j++)
+        {
+            if (grid[i, j] != 2)
+            {
+                double x = xMin + (i * resolution);
+                double y = yMin + (j * resolution);
+                var pts = new Point3d[]
+                {
+                    new Point3d(x, y, zLevel),
+                    new Point3d(x + resolution, y, zLevel),
+                    new Point3d(x + resolution, y + resolution, zLevel),
+                    new Point3d(x, y + resolution, zLevel),
+                    new Point3d(x, y, zLevel)
+                };
+                cellRects.Add(new PolylineCurve(pts));
+            }
+        }
+    }
+
+    if (cellRects.Count == 0) return new List<Curve>();
+
+    var unioned = Curve.CreateBooleanUnion(cellRects, tolerance);
+    if (unioned == null || unioned.Length == 0) return new List<Curve>();
+
+    // RDP Smoothing
+    var smoothedCurves = new List<Curve>();
+    double rdpTolerance = resolution * 1;
+    foreach (var bCrv in unioned)
+    {
+        if (bCrv.TryGetPolyline(out Polyline plRdp))
+        {
+            plRdp.ReduceSegments(rdpTolerance);
+            smoothedCurves.Add(new PolylineCurve(plRdp));
+        }
+        else
+        {
+            smoothedCurves.Add(bCrv);
         }
     }
 
