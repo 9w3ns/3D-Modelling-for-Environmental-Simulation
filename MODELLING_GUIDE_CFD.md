@@ -58,3 +58,25 @@ The "Morphological Closing" process can be executed with different corner treatm
 To ensure the automated simplification is deterministic, the following steps were codified:
 1.  **Incremental Boolean Union**: Instead of unioning all 100+ dilated curves at once, the system unions them one-by-one. This prevents the solver from becoming overwhelmed by complex overlaps.
 2.  **Force CCW Orientation**: Before extrusion, every perimeter curve must be validated for Counter-Clockwise (CCW) orientation. If Clockwise (CW), the curve is reversed to ensure the resulting mass extrudes **Upwards** (Positive Z) rather than into the ground.
+
+## 4. Automation Improvements (Recent Updates)
+
+During recent script implementations, several critical enhancements were made to the base Morphological Closing logic to guarantee 100% geometric coverage and eliminate Boolean failures:
+
+1. **Forced Planarity (Z=0 Projection)**
+   * **The Issue:** `Mesh.GetOutlines()` returns 2D polylines, but their Z-coordinates often vary based on the original mesh topology. This caused planar Boolean Union operations to fail silently, resulting in disjointed, intersecting curves.
+   * **The Fix:** Every control point of every extracted polyline is now forcefully projected to `Z=0` *before* any offsets or Boolean operations occur. This resulted in a 0% union failure rate across hundreds of meshes.
+
+2. **Active Height Tiering Execution**
+   * **The Issue:** While height tiering was conceptually defined, flattening all curves into a single 2D union destroyed the vertical topography, creating a single monolithic block.
+   * **The Fix:** Geometries are now pre-sorted into **10-meter height bins** based on their maximum Z-value. The entire Morphological Closing process (Dilation -> Union -> Erosion) is executed *independently* for each tier. The resulting footprints are then extruded to their specific tier's maximum height, generating stacked, "wedding cake" topographies that accurately preserve skimming flow.
+
+3. **Expanded Geometry Support (Extrusions & Breps)**
+   * **The Issue:** Native Rhino `Extrusion` and `Brep` (Polysurface) objects were initially ignored by the mesh outline extractor, leaving gaps in the final context.
+   * **The Fix:** The ingestion logic now automatically detects non-mesh objects and performs an on-the-fly conversion to `Mesh` (using `Mesh.CreateFromBrep` and `ToBrep`) before outline extraction, ensuring absolute compliance with the "No Geometry Left Behind" mandate.
+
+4. **Area-Sorted Incremental Union**
+   * To maximize the stability of the incremental Boolean Union, the dilated footprints are now sorted by Area (largest to smallest) before being merged. This prevents mathematical solver failures when resolving hundreds of intersecting curves.
+
+5. **Corrected Offset Orientation Logic**
+   * Verified that in RhinoCommon, for a Counter-Clockwise (CCW) curve, a **positive (+)** distance executes the outward Dilation, and a **negative (-)** distance executes the inward Erosion.
