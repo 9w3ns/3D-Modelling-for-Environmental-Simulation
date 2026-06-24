@@ -3,10 +3,10 @@
 Use the shared repository documentation as the source of truth:
 
 1. `README.md` - Project overview and quick start.
-2. `CORE_ARCHITECTURE.md` - Technical architecture and pipeline phases.
-3. `MCP_INSTRUCTIONS.md` - Role definition and mandatory layer conventions.
-4. `MODELLING_GUIDE_*.md` - Engine-specific geometric requirements (Ladybug, Honeybee, CFD).
-5. `RECONSTRUCTION_PIPELINE.md` - The detailed 5-phase logic for the 2.5D Honeybee geometry reconstruction.
+2. `docs/architecture/CORE_ARCHITECTURE.md` - Technical architecture and pipeline phases.
+3. `docs/architecture/MCP_INSTRUCTIONS.md` - Role definition and mandatory layer conventions.
+4. `docs/modelling-guides/MODELLING_GUIDE_*.md` - Engine-specific geometric requirements (Ladybug, Honeybee, CFD).
+5. `docs/architecture/RECONSTRUCTION_PIPELINE.md` - The detailed 5-phase logic for the 2.5D Honeybee geometry reconstruction.
 
 ## Project Scope Mandate
 **Exclusion of Simulation Logic:** The scope of this project is strictly limited to the **3D modelling transformation and preparation** of simulation-ready geometry. Do NOT attempt to build or modify Grasshopper simulation logic (radiation, sun hours, thermal loads), as these are handled by existing standardized scripts. Focus exclusively on geometric optimization, layer compliance, and manifold verification.
@@ -14,8 +14,8 @@ Use the shared repository documentation as the source of truth:
 **The Goal Matrix (Source of Truth):** 
 The file `3D Modelling for Environmental Simulation.xlsx` is the **definitive Goal Matrix** for this project. Every transformation pathway (Ladybug, Honeybee, CFD, etc.) must be engineered to produce the specific **Geometry Type** and **Level of Detail (LOD)** defined in this matrix for the chosen simulation engine. "All roads lead to the Matrix" – the success of a transformation is measured by its compliance with these specifications.
 
-At the start of every session, read `MCP_INSTRUCTIONS.md` and consult the `3D Modelling for Environmental Simulation.xlsx` matrix.
-Also read `src/EnvAnalysisCore/CoreLogic.cs` to understand the current implementation of the stateless Pure Logic Core.
+At the start of every session, read `docs/architecture/MCP_INSTRUCTIONS.md` and consult the `3D Modelling for Environmental Simulation.xlsx` matrix.
+Also read `scripts/Phase1.cs`, `scripts/Phase2.cs`, and `scripts/Phase3.cs` to understand the current active pipeline implementation.
 
 ## System Integrity & Regression Guardrails
 
@@ -27,7 +27,7 @@ To prevent regressions in the geometry transformation pipeline:
     *   **Layer 3: Commands/Agents**: The orchestration layer called by the user or MCP Agent.
 2.  **Validation**:
     *   **Statelessness**: Ensure that any logic added to `EnvAnalysisCore` does not reference `RhinoDoc` or `RhinoObject`.
-    *   **Layer Convention**: Always verify that input geometry follows the `Analysis::...` schema defined in `MCP_INSTRUCTIONS.md`.
+    *   **Layer Convention**: Always verify that input geometry follows the `Analysis::...` schema defined in `docs/architecture/MCP_INSTRUCTIONS.md`.
 4.  **Coverage Audit (The Loop Check)**:
     *   **No Geometry Left Behind**: Every source object identified in the Ingestion phase must be accounted for in the output.
     *   **Gap Analysis**: If an object fails to transform, it must be flagged on `Analysis::Errors::Untransformed` rather than being silently ignored.
@@ -82,4 +82,4 @@ To create a simplified, watertight urban simulation environment:
 - **Unique ID Export**: All STL exports must follow the naming convention `GeometryforCFD_[FileName]_[ID].stl` to prevent accidental file duplication or replacement.
 
 ---
-*Rationale and historical decisions live in `CORE_ARCHITECTURE.md`.*
+*Rationale and historical decisions live in `docs/architecture/CORE_ARCHITECTURE.md`.*

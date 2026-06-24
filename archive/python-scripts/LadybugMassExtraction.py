@@ -1,5 +1,8 @@
+# pyrefly: ignore [missing-import]
 import rhinoscriptsyntax as rs
+# pyrefly: ignore [missing-import]
 import Rhino
+# pyrefly: ignore [missing-import]
 import scriptcontext as sc
 import time
 from collections import deque

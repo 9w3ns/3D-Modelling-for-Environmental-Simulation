@@ -4,16 +4,41 @@ This repository contains a deterministic geometry transformation tool for enviro
 
 ## Project Structure
 
-- `CORE_ARCHITECTURE.md`: Detailed architectural plan for the C# transformation pipeline.
-- `MCP_INSTRUCTIONS.md`: Foundational instructions for AI agents (like RhinoMCP) to operate this tool.
-- `src/EnvAnalysisCore/`: C# project containing the core transformation logic.
+```
+├── scripts/                          ← Active pipeline (Rhino 8 ScriptEditor)
+│   ├── Phase1.cs                     ← Ingestion & Filtering
+│   ├── Phase2.cs                     ← Semantic Classification
+│   ├── Phase3.cs                     ← Reconstruction
+│   ├── cfd_generation.py             ← CFD mesh generation (MCP)
+│   └── export_cfd_stl.py             ← CFD STL export (MCP)
+│
+├── docs/
+│   ├── architecture/                 ← System design & pipeline logic
+│   │   ├── CORE_ARCHITECTURE.md
+│   │   ├── MCP_INSTRUCTIONS.md
+│   │   └── RECONSTRUCTION_PIPELINE.md
+│   │
+│   └── modelling-guides/             ← Per-engine geometry specs
+│       ├── MODELLING_GUIDE_CFD.md    ← ⭐ Active MCP guide
+│       ├── MODELLING_GUIDE_LADYBUG.md
+│       ├── MODELLING_GUIDE_HB_ENERGY.md
+│       ├── MODELLING_GUIDE_HB_RADIANCE.md
+│       └── CFD_Mesh_Extrusion_Process.md
+│
+├── archive/                          ← Previous approaches (kept for reference)
+│
+├── GEMINI.md                         ← Agent rules & guardrails
+├── 3D Modelling for Environmental Simulation.xlsx  ← Goal Matrix
+└── README.md
+```
 
-### Modeling Guides
-- `MODELLING_GUIDE_LADYBUG.md`: Requirements for Sun & Radiation analysis.
-- `MODELLING_GUIDE_HB_RADIANCE.md`: Requirements for Daylight & Glare analysis.
-- `MODELLING_GUIDE_HB_ENERGY.md`: Requirements for Thermal & Comfort analysis.
-- `MODELLING_GUIDE_CFD.md`: Requirements for Wind & CFD simulation (formerly Context Mesh Simplification).
+### Modelling Guides
+- `docs/modelling-guides/MODELLING_GUIDE_LADYBUG.md`: Requirements for Sun & Radiation analysis.
+- `docs/modelling-guides/MODELLING_GUIDE_HB_RADIANCE.md`: Requirements for Daylight & Glare analysis.
+- `docs/modelling-guides/MODELLING_GUIDE_HB_ENERGY.md`: Requirements for Thermal & Comfort analysis.
+- `docs/modelling-guides/MODELLING_GUIDE_CFD.md`: Requirements for Wind & CFD simulation.
+- `docs/modelling-guides/CFD_Mesh_Extrusion_Process.md`: CFD mesh extrusion sub-process (mesh output).
 
 ## Quick Start for AI Agents
 
-If you are an AI agent activated in this workspace, please read `MCP_INSTRUCTIONS.md` to understand your role and the mandatory layer conventions.
+If you are an AI agent activated in this workspace, please read `docs/architecture/MCP_INSTRUCTIONS.md` to understand your role and the mandatory layer conventions.
